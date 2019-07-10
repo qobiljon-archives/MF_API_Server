@@ -1,0 +1,14 @@
+DateTime
+Django
+djangorestframework
+google-api-python-client
+httplib2
+oauth2client
+pyasn1
+pyasn1-modules
+pytz
+rsa
+six
+unicodecsv
+uritemplate
+zope.interface
