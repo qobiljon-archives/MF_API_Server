@@ -113,8 +113,8 @@ class Event(models.Model):
     expected_stress_level = models.PositiveSmallIntegerField()
     expected_stress_type = models.CharField(max_length=32)
     expected_stress_cause = models.CharField(max_length=128)
+    real_stress_level = models.PositiveSmallIntegerField(default=-1)
     evaluated = models.BooleanField(default=False)
-    real_stress_level = models.PositiveSmallIntegerField(default=0)
 
     def to_json(self):
         return {
