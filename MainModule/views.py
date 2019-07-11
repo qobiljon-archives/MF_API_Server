@@ -6,6 +6,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 import calendar as cal
 import datetime
+import operator
+import random
 import json
 
 from MainModule.models import Intervention
@@ -241,6 +243,7 @@ def handle_event_edit(request):
                 event.end_ts = params['endTime']
             if 'intervention' in params:
                 event.intervention = params['intervention']
+                event.intervention_last_picked_time = int(datetime.datetime.now().timestamp())
             if 'interventionReminder' in params:
                 event.interventionReminder = params['interventionReminder']
             if 'stressType' in params:
@@ -328,10 +331,32 @@ def handle_intervention_create(request):
 @csrf_exempt
 @require_http_methods(['POST'])
 def handle_system_intervention_fetch(request):
-    system_interventions = []
-    for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_SYSTEM, is_public=True):
-        system_interventions += [intervention]
-    return JsonResponse(data={'result': Result.OK, 'interventions': [intervention.to_json() for intervention in system_interventions]})
+    params = extract_post_params(request)
+    if are_params_filled(params, ['username', 'password']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists():
+            user = User.objects.get(username=params['username'])
+            if 'sort' in params:
+                if params['sort'] == 'recent_choice':
+                    events = [event for event in Event.objects.filter(owner=user).exclude(intervention=None)]
+                    events = sorted(events, key=operator.attrgetter(''))  # TODO: COME BACK
+                elif params['sort'] == 'popularity':
+                    pass
+                else:
+                    system_interventions = []
+                    for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_SYSTEM, is_public=True):
+                        system_interventions += [intervention]
+                    random.shuffle(system_interventions)
+                    return JsonResponse(data={'result': Result.OK, 'interventions': [intervention.to_json() for intervention in system_interventions]})
+            else:
+                system_interventions = []
+                for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_SYSTEM, is_public=True):
+                    system_interventions += [intervention]
+                random.shuffle(system_interventions)
+                return JsonResponse(data={'result': Result.OK, 'interventions': [intervention.to_json() for intervention in system_interventions]})
+        else:
+            return JsonResponse(data={'result': Result.FAIL})
+    else:
+        return JsonResponse(data={'result': Result.BAD_REQUEST})
 
 
 @csrf_exempt
@@ -340,10 +365,22 @@ def handle_peer_intervention_fetch(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']):
         if User.objects.filter(username=params['username'], password=params['password']).exists():
-            system_interventions = []
-            for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_USER, is_public=True):
-                system_interventions += [intervention]
-            return JsonResponse(data={'result': Result.OK, 'interventions': [intervention.to_json() for intervention in system_interventions]})
+            user = User.objects.get(username=params['username'])
+            if 'sort' in params:
+                if params['sort'] == 'recent_choice':
+                    pass
+                elif params['sort'] == 'popularity':
+                    pass
+                else:
+                    system_interventions = []
+                    for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_USER, is_public=True):
+                        system_interventions += [intervention]
+                    return JsonResponse(data={'result': Result.OK, 'interventions': [intervention.to_json() for intervention in system_interventions]})
+            else:
+                system_interventions = []
+                for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_USER, is_public=True):
+                    system_interventions += [intervention]
+                return JsonResponse(data={'result': Result.OK, 'interventions': [intervention.to_json() for intervention in system_interventions]})
         else:
             return JsonResponse(data={'result': Result.FAIL})
     else:

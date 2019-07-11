@@ -108,6 +108,7 @@ class Event(models.Model):
     event_reminder = models.SmallIntegerField()
     intervention = models.ForeignKey(to='Intervention', null=True, on_delete=models.SET_NULL)
     intervention_reminder = models.SmallIntegerField(default=0)
+    intervention_last_picked_time = models.BigIntegerField()
     expected_stress_level = models.PositiveSmallIntegerField()
     expected_stress_type = models.CharField(max_length=32)
     expected_stress_cause = models.CharField(max_length=128)
@@ -126,6 +127,7 @@ class Event(models.Model):
             'endTime': self.end_ts,
             'intervention': self.intervention.to_json() if self.intervention is not None else 'N/A',
             'interventionReminder': self.intervention_reminder,
+            'interventionLastPickedTime': self.intervention_last_picked_time,
             'stressType': self.expected_stress_type,
             'stressCause': self.expected_stress_cause,
             'repeatMode': self.repeat_mode,
@@ -151,6 +153,7 @@ class Event(models.Model):
                 event_reminder=event_reminder_timedelta,
                 intervention=intervention,
                 intervention_reminder=intervention_reminder_timedelta,
+                intervention_last_picked_time=int(datetime.datetime.now().timestamp()),
                 expected_stress_level=expected_stress_level,
                 expected_stress_type=expected_stress_type,
                 expected_stress_cause=expected_stress_cause
@@ -166,6 +169,7 @@ class Event(models.Model):
                 event_reminder=event_reminder_timedelta,
                 intervention=intervention,
                 intervention_reminder=intervention_reminder_timedelta,
+                intervention_last_picked_time=int(datetime.datetime.now().timestamp()),
                 expected_stress_level=expected_stress_level,
                 expected_stress_type=expected_stress_type,
                 expected_stress_cause=expected_stress_cause
