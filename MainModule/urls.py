@@ -13,8 +13,6 @@ urlpatterns = [
 
     re_path(r'^register/?$', views.handle_register),
     re_path(r'^login/?$', views.handle_login),
-    re_path(r'^logout/?$', views.handle_logout),
-    re_path(r'^logout/?$', views.handle_logout),
 
     re_path(r'^event_create/?$', views.handle_event_create),
     re_path(r'^event_edit/?$', views.handle_event_edit),

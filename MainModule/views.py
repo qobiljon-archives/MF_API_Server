@@ -7,9 +7,6 @@ from django.http import JsonResponse
 import calendar as cal
 import datetime
 import json
-import os
-
-from MainModule.settings import BASE_DIR
 
 from MainModule.models import Intervention
 from MainModule.models import Evaluation
@@ -42,7 +39,7 @@ def is_user_occupied(user, from_ts, till_ts, except_event_id=None):
     if except_event_id is None:
         return Event.objects.filter(owner=user, start_ts__range=(from_ts, till_ts - 1)).exists() \
                or Event.objects.filter(owner=user, end_ts__range=(from_ts + 1, till_ts)).exists() \
-               or Event.objects.filter(owner=user, start_ts__lte=from_ts, endTime__gte=till_ts).exists()
+               or Event.objects.filter(owner=user, start_ts__lte=from_ts, end_ts__gte=till_ts).exists()
     else:
         return Event.objects.filter(owner=user, start_ts__range=(from_ts, till_ts - 1)).exclude(id=except_event_id).exists() \
                or Event.objects.filter(owner=user, end_ts__range=(from_ts + 1, till_ts)).exclude(id=except_event_id).exists() \
@@ -109,22 +106,7 @@ def handle_login(request):
     if are_params_filled(params, ['username', 'password']):
         if User.objects.filter(username=params['username'], password=params['password']).exists():
             user = User.objects.get(username=params['username'])
-            user.login()
             return JsonResponse(data={'result': Result.OK, 'name': user.first_name})
-        else:
-            return JsonResponse(data={'result': Result.FAIL})
-    else:
-        return JsonResponse(data={'result': Result.BAD_REQUEST})
-
-
-@csrf_exempt
-@require_http_methods(['POST'])
-def handle_logout(request):
-    params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password']):
-        if User.objects.filter(username=request['username'], password=request['password']).exists():
-            User.objects.get(username=request['username']).logout(request)
-            return JsonResponse(data={'result': Result.OK})
         else:
             return JsonResponse(data={'result': Result.FAIL})
     else:
@@ -135,110 +117,104 @@ def handle_logout(request):
 @require_http_methods(['POST'])
 def handle_event_create(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password', 'title', 'stressLevel', 'startTime', 'endTime', 'intervention', 'interventionReminder', 'stressType', 'stressCause', 'repeatTill', 'repeatMode', 'eventReminder']) and User.objects.filter(username=params['username'], password=params['password']).exists() and Intervention.objects.filter(description=params['intervention']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in():
-            if params['repeatMode'] is Event.REPEAT_MODE_NONE:
-                if not is_user_occupied(user=user, from_ts=params['startTime'], till_ts=params['endTime']):
+    if are_params_filled(params, ['username', 'password', 'title', 'stressLevel', 'startTime', 'endTime', 'intervention', 'interventionReminder', 'stressType', 'stressCause', 'repeatTill', 'repeatMode', 'eventReminder']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists() and (len(params['intervention']) == 0 or Intervention.objects.filter(description=params['intervention']).exists()):
+            user = User.objects.get(username=params['username'])
+            intervention = Intervention.objects.get(description=params['intervention']) if len(params['intervention']) > 0 else None
+            repeat_mode = int(params['repeatMode'])
+            from_ts = int(params['startTime'])
+            till_ts = int(params['endTime'])
+            if repeat_mode is Event.REPEAT_MODE_NONE:
+                if not is_user_occupied(user=user, from_ts=from_ts, till_ts=till_ts):
                     # create a single event
                     Event.create_event(
                         owner=User.objects.get(username=params['username']),
                         title=params['title'],
-                        expected_stress_level=params['stressLevel'],
-                        start_ts=params['startTime'],
-                        end_ts=params['endTime'],
-                        intervention=Intervention.objects.get(description=params['intervention']),
-                        intervention_reminder_timedelta=params['interventionReminder'],
+                        expected_stress_level=int(params['stressLevel']),
+                        start_ts=from_ts,
+                        end_ts=till_ts,
+                        intervention=intervention,
+                        intervention_reminder_timedelta=int(params['interventionReminder']),
                         expected_stress_type=params['stressType'],
                         expected_stress_cause=params['stressCause'],
-                        repeat_mode=params['repeatMode'],
-                        event_reminder_timedelta=params['eventReminder']
+                        repeat_mode=repeat_mode,
+                        event_reminder_timedelta=int(params['eventReminder'])
                     )
                     return JsonResponse(data={'result': Result.OK})
                 else:
                     return JsonResponse(data={'result': Result.FAIL})
-            elif params['repeatMode'] is Event.REPEAT_MODE_EVERYDAY:
-                from_ts = params['startTime']
-                till_ts = params['endTime']
+            elif repeat_mode is Event.REPEAT_MODE_EVERYDAY:
+                from_ts = int(params['startTime'])
+                till_ts = int(params['endTime'])
 
-                if till_ts - from_ts > 86400000:
+                if till_ts - from_ts > 86400:
                     return JsonResponse(data={'result': Result.FAIL, 'reason': 'event length is longer than a day'})
 
                 repetition_id = -1
-                while from_ts < params['repeatTill']:
+                while from_ts < int(params['repeatTill']):
                     if not is_user_occupied(user=user, from_ts=from_ts, till_ts=till_ts):
                         event = Event.create_event(
-                            owner=user,
+                            owner=User.objects.get(username=params['username']),
                             title=params['title'],
                             start_ts=from_ts,
                             end_ts=till_ts,
-                            repeat_mode=params['repeatMode'],
-                            repeat_till=params['repeatTill'],
-                            repetition_id=repetition_id,
-                            intervention=Intervention.objects.get(description=params['intervention']),
-                            intervention_reminder_timedelta=params['interventionReminder'],
-                            expected_stress_level=params['stressLevel'],
+                            intervention=intervention,
+                            intervention_reminder_timedelta=int(params['interventionReminder']),
+                            expected_stress_level=int(params['stressLevel']),
                             expected_stress_type=params['stressType'],
                             expected_stress_cause=params['stressCause'],
-                            event_reminder_timedelta=params['eventReminder']
+                            repeat_mode=repeat_mode,
+                            repetition_id=repetition_id,
+                            repeat_till=int(params['repeatTill']),
+                            event_reminder_timedelta=int(params['eventReminder'])
                         )
                         repetition_id = event.repetition_id
-                    from_ts += 86400000
-                    till_ts += 86400000
+                    from_ts += 86400
+                    till_ts += 86400
 
                 return JsonResponse(data={'result': Result.OK})
-            elif params['repeatMode'] is Event.REPEAT_MODE_WEEKLY:
-                # create multiple events
-                start = [
-                    params['startTime'] if params['mon'] else None,
-                    params['startTime'] if params['tue'] else None,
-                    params['startTime'] if params['wed'] else None,
-                    params['startTime'] if params['thu'] else None,
-                    params['startTime'] if params['fri'] else None,
-                    params['startTime'] if params['sat'] else None,
-                    params['startTime'] if params['sun'] else None
-                ]
-                end = [
-                    params['endTime'] if params['mon'] else None,
-                    params['endTime'] if params['tue'] else None,
-                    params['endTime'] if params['wed'] else None,
-                    params['endTime'] if params['thu'] else None,
-                    params['endTime'] if params['fri'] else None,
-                    params['endTime'] if params['sat'] else None,
-                    params['endTime'] if params['sun'] else None
-                ]
-
-                if params['endTime'] - params['startTime'] > 604800000:
+            elif repeat_mode is Event.REPEAT_MODE_WEEKLY:
+                if int(params['endTime']) - int(params['startTime']) > 604800:
                     return JsonResponse(data={'result': Result.FAIL, 'reason': 'event length is longer than a week'})
 
-                repetition_id = -1
-                for x in range(7):
-                    if start[x] is None:
-                        continue
-                    day_delta = (7 - (extract_weekday(start[x]) - x)) % 7
-                    start[x] = add_timedelta(start[x], datetime.timedelta(days=day_delta))
-                    end[x] = add_timedelta(end[x], datetime.timedelta(days=day_delta))
+                start_datetime = datetime.datetime.fromtimestamp(from_ts)
+                end_datetime = datetime.datetime.fromtimestamp(till_ts)
 
-                    while start[x] < params['repeatTill']:
-                        if not is_user_occupied(user=user, from_ts=start[x], till_ts=end[x]):
-                            event = Event.create_event(
-                                owner=user,
-                                title=params['title'],
-                                start_ts=start[x],
-                                end_ts=end[x],
-                                repeat_mode=params['repeatMode'],
-                                repeat_till=params['repeatTill'],
-                                repetition_id=repetition_id,
-                                intervention=Intervention.objects.get(description=params['intervention']),
-                                intervention_reminder_timedelta=params['interventionReminder'],
-                                expected_stress_level=params['stressLevel'],
-                                expected_stress_type=params['stressType'],
-                                expected_stress_cause=params['stressCause'],
-                                event_reminder_timedelta=params['eventReminder']
-                            )
-                            repetition_id = event.repetition_id
-                        start[x] += 604800000
-                        end[x] += 604800000
+                # create multiple events
+                consider = [
+                    bool(params['mon'].lower() == 'true'),
+                    bool(params['tue'].lower() == 'true'),
+                    bool(params['wed'].lower() == 'true'),
+                    bool(params['thu'].lower() == 'true'),
+                    bool(params['fri'].lower() == 'true'),
+                    bool(params['sat'].lower() == 'true'),
+                    bool(params['sun'].lower() == 'true'),
+                ]
+
+                repetition_id = -1
+                repeat_till_date = datetime.datetime.fromtimestamp(int(params['repeatTill'])).replace(hour=0, minute=0, second=0)
+                weekday = start_datetime.weekday()
+                while start_datetime < repeat_till_date:
+                    if consider[weekday]:
+                        event = Event.create_event(
+                            owner=User.objects.get(username=params['username']),
+                            title=params['title'],
+                            start_ts=int(start_datetime.timestamp()),
+                            end_ts=int(end_datetime.timestamp()),
+                            intervention=intervention,
+                            intervention_reminder_timedelta=int(params['interventionReminder']),
+                            expected_stress_level=int(params['stressLevel']),
+                            expected_stress_type=params['stressType'],
+                            expected_stress_cause=params['stressCause'],
+                            repeat_mode=repeat_mode,
+                            repetition_id=repetition_id,
+                            repeat_till=int(params['repeatTill']),
+                            event_reminder_timedelta=int(params['eventReminder'])
+                        )
+                        repetition_id = event.repetition_id
+                    weekday = (weekday + 1) % 7
+                    start_datetime += datetime.timedelta(days=1)
+                    end_datetime += datetime.timedelta(days=1)
                 return JsonResponse(data={'result': Result.OK})
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -250,9 +226,9 @@ def handle_event_create(request):
 @require_http_methods(['POST'])
 def handle_event_edit(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'eventId']) and User.objects.filter(username=params['username'], password=params['password']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in() and Event.objects.filter(owner=user, id=params['eventId']).exists():
+    if are_params_filled(params, ['username', 'eventId']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists():
+            user = User.objects.get(username=params['username'])
             event = Event.objects.get(id=params['eventId'])
             if 'stressLevel' in params:
                 event.stressLevel = params['stressLevel']
@@ -289,19 +265,22 @@ def handle_event_edit(request):
 @require_http_methods(['POST'])
 def handle_event_delete(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password']) and ('eventId' in params or 'repeatId' in params) and User.objects.filter(username=params['username'], password=params['password']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in():
+    if are_params_filled(params, ['username', 'password']) and ('eventId' in params or 'repeatId' in params):
+        if User.objects.filter(username=params['username'], password=params['password']).exists():
+            user = User.objects.get(username=params['username'])
             if 'eventId' in params and Event.objects.filter(owner=user, id=params['eventId']).exists():
                 Event.objects.get(id=params['eventId']).delete()
                 return JsonResponse(data={'result': Result.OK})
-            elif 'repeatId' in params and Event.objects.filter(owner=user, repeatId=params['repeatId']).exists():
-                deleted_events_count = 0
-                for event in Event.objects.filter(owner=user, repeatId=params['repeatId']):
-                    deleted_events_count += 1
+            elif 'repeatId' in params and Event.objects.filter(owner=user, repetition_id=int(params['repeatId'])).exists():
+                deleted_event_ids = []
+                for event in Event.objects.filter(owner=user, repetition_id=int(params['repeatId'])):
+                    deleted_event_ids += [event.id]
                     event.delete()
-                return JsonResponse(data={'result': Result.OK, 'deleted_events_count': deleted_events_count})
-        return JsonResponse(data={'result': Result.FAIL})
+                return JsonResponse(data={'result': Result.OK, 'deleted_event_ids': deleted_event_ids})
+            else:
+                return JsonResponse(data={'result': Result.FAIL})
+        else:
+            return JsonResponse(data={'result': Result.FAIL})
     else:
         return JsonResponse(data={'result': Result.BAD_REQUEST})
 
@@ -310,11 +289,11 @@ def handle_event_delete(request):
 @require_http_methods(['POST'])
 def handle_events_fetch(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password']) and User.objects.filter(username=params['username'], password=params['password']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in():
-            from_ts = params['period_from']
-            till_ts = params['period_till']
+    if are_params_filled(params, ['username', 'password']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists():
+            user = User.objects.get(username=params['username'])
+            from_ts = int(params['period_from'])
+            till_ts = int(params['period_till'])
             matching_events = []
 
             for event in Event.objects.filter(owner=user, start_ts__range=(from_ts, till_ts - 1)):
@@ -325,7 +304,6 @@ def handle_events_fetch(request):
             for event in Event.objects.filter(owner=user, start_ts__lte=from_ts, end_ts__gte=till_ts):
                 if event not in matching_events:
                     matching_events += [event]
-
             return JsonResponse(data={'result': Result.OK, 'array': [event.to_json() for event in matching_events]})
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -336,9 +314,9 @@ def handle_events_fetch(request):
 @require_http_methods(['POST'])
 def handle_intervention_create(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password', 'interventionName']) and User.objects.filter(username=params['username'], password=params['password']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in() and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
+    if are_params_filled(params, ['username', 'password', 'interventionName']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists() and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
+            user = User.objects.get(username=params['username'])
             Intervention.create_intervention(description=params['interventionName'], creator=user)
             return JsonResponse(data={'result': Result.OK})
         else:
@@ -360,9 +338,8 @@ def handle_system_intervention_fetch(request):
 @require_http_methods(['POST'])
 def handle_peer_intervention_fetch(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password']) and User.objects.filter(username=params['username'], password=params['password']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in():
+    if are_params_filled(params, ['username', 'password']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists():
             system_interventions = []
             for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_USER, is_public=True):
                 system_interventions += [intervention]
@@ -377,9 +354,8 @@ def handle_peer_intervention_fetch(request):
 @require_http_methods(['POST'])
 def handle_evaluation_submit(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password', 'eventId', 'interventionName', 'startTime', 'endTime', 'realStressLevel', 'realStressCause', 'journal', 'eventDone', 'interventionDone', 'sharedIntervention', 'intervEffectiveness']) and User.objects.filter(username=params['username'], password=params['password']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in() and Event.objects.filter(id=params['eventId'], owner=user).exists():
+    if are_params_filled(params, ['username', 'password', 'eventId', 'interventionName', 'startTime', 'endTime', 'realStressLevel', 'realStressCause', 'journal', 'eventDone', 'interventionDone', 'sharedIntervention', 'intervEffectiveness']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists() and Event.objects.filter(id=params['eventId'], owner__username=params['username']).exists():
             event = Event.objects.get(eventId=params['eventId'])
             event.realStressLevel = params['realStressLevel']
             event.save()
@@ -419,10 +395,9 @@ def handle_evaluation_submit(request):
 @require_http_methods(['POST'])
 def handle_evaluation_fetch(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password', 'eventId']) and User.objects.filter(username=params['username']).exists() and Event.objects.filter(id=params['eventId'], owner__username=params['username']).exists():
-        user = User.objects.get(username=params['username'])
-        event = Event.objects.get(id=params['eventId'])
-        if user.logged_in() and Evaluation.objects.filter(event=event).exists():
+    if are_params_filled(params, ['username', 'password', 'eventId']):
+        if User.objects.filter(username=params['username']).exists() and Event.objects.filter(id=params['eventId'], owner__username=params['username']).exists() and Evaluation.objects.filter(event__id=params['eventId']).exists():
+            event = Event.objects.get(id=params['eventId'])
             return JsonResponse(data={'result': Result.OK, 'evaluation': Evaluation.objects.get(event=event).to_json()})
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -434,25 +409,23 @@ def handle_evaluation_fetch(request):
 @require_http_methods(['POST'])
 def handle_survey_submit(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password', 'values']) and User.objects.filter(username=params['username'], password=params['password']).exists() and Survey.survey_str_matches(params['values']):
-        user = User.objects.get(username=params['username'])
-        if user.logged_in():
+    if are_params_filled(params, ['username', 'password', 'values']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists() and Survey.survey_str_matches(params['values']):
+            user = User.objects.get(username=params['username'])
             Survey.create_survey(user=User.objects.get(username=user), values=params['values'])
             return JsonResponse(data={'result': Result.OK})
         else:
             return JsonResponse(data={'result': Result.FAIL})
     else:
-        return JsonResponse(data={'result': Result.BAD_REQUEST,
-                                  'reason': 'Username, password, or survey elements were not completely passed as a POST argument!'})
+        return JsonResponse(data={'result': Result.BAD_REQUEST})
 
 
 @csrf_exempt
 @require_http_methods(['POST'])
 def handle_survey_questions_fetch(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password']) and User.objects.filter(username=params['username'], password=params['password']).exists():
-        user = User.objects.get(username=params['username'])
-        if user.logged_in():
+    if are_params_filled(params, ['username', 'password']):
+        if User.objects.filter(username=params['username'], password=params['password']).exists():
             return JsonResponse(data={'result': Result.OK, 'surveys': Survey.QUESTIONS_LIST})
         else:
             return JsonResponse(data={'result': Result.FAIL})

@@ -1,6 +1,5 @@
 # coding=utf-8
 from django.core.validators import validate_comma_separated_integer_list
-from django.contrib.auth import authenticate, logout
 from django.contrib.auth.models import AbstractUser
 from django.contrib.sessions.models import Session
 from django.db import models
@@ -12,27 +11,6 @@ from MainModule.settings import BASE_DIR
 
 
 class User(AbstractUser):
-    def logged_in(self):
-        for session in Session.objects.all():
-            if session.get_decoded().get('_auth_user_id') == self.id:
-                return True
-        return False
-
-    def login(self):
-        if not self.logged_in():
-            authenticate(User.objects.get(username=self.username))
-
-    def logout(self, request=None):
-        if self.logged_in():
-            if request is not None:
-                user = User.objects.get(username=self.username)
-                for session in Session.objects.all():
-                    if session.get_decoded().get('_auth_user_id') == user.id:
-                        session.delete()
-            else:
-                if request.user.logged_in():
-                    logout(request)
-
     def to_json(self):
         return json.dumps({
             'username': self.username,
@@ -55,7 +33,7 @@ class Intervention(models.Model):
     CREATION_METHOD_USER = 1
 
     description = models.CharField(max_length=128, primary_key=True)
-    creator = models.ForeignKey(to=User, null=True, on_delete=models.SET_NULL)
+    creator = models.ForeignKey(to='User', null=True, on_delete=models.SET_NULL)
     creation_method = models.SmallIntegerField(default=CREATION_METHOD_SYSTEM)
     is_public = models.BooleanField(default=True)
     number_of_selections = models.IntegerField(default=0)
@@ -107,7 +85,7 @@ class Intervention(models.Model):
     def create_system_interventions():
         system_interventions = Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_SYSTEM)
         if system_interventions.exists():
-            system_interventions.delete()
+            return  # TODO: swap thi sline with "system_interventions.delete()" in production
 
         print('Creating system interventions...')
         with open(os.path.join(BASE_DIR, 'assets', 'system_interventions.txt'), 'r', encoding='UTF8') as r:
@@ -122,21 +100,21 @@ class Event(models.Model):
     REPEAT_MODE_WEEKLY = 2
 
     id = models.AutoField(primary_key=True)
-    owner = models.ForeignKey(to=User, on_delete=models.CASCADE)
+    owner = models.ForeignKey(to='User', on_delete=models.CASCADE)
     title = models.CharField(max_length=128)
     start_ts = models.BigIntegerField()
     end_ts = models.BigIntegerField()
-    repetition_id = models.BigIntegerField(default=-1)
+    repetition_id = models.BigIntegerField(default=0)
     repeat_mode = models.SmallIntegerField()
-    repeat_till = models.BigIntegerField(default=-1)
-    event_reminder_timedelta = models.SmallIntegerField()
-    intervention = models.ForeignKey(to=Intervention, null=True, on_delete=models.SET_NULL)
-    intervention_reminder_timedelta = models.SmallIntegerField(default=-1)
+    repeat_till = models.BigIntegerField(default=0)
+    event_reminder = models.SmallIntegerField()
+    intervention = models.ForeignKey(to='Intervention', null=True, on_delete=models.SET_NULL)
+    intervention_reminder = models.SmallIntegerField(default=0)
     expected_stress_level = models.PositiveSmallIntegerField()
     expected_stress_type = models.CharField(max_length=32)
     expected_stress_cause = models.CharField(max_length=128)
-    real_stress_level = models.PositiveSmallIntegerField(default=-1)
     evaluated = models.BooleanField(default=False)
+    real_stress_level = models.PositiveSmallIntegerField(default=0)
 
     def to_json(self):
         return {
@@ -149,34 +127,35 @@ class Event(models.Model):
             'startTime': self.start_ts,
             'endTime': self.end_ts,
             'intervention': self.intervention.to_json() if self.intervention is not None else 'N/A',
-            'interventionReminder': self.intervention_reminder_timedelta,
+            'interventionReminder': self.intervention_reminder,
             'stressType': self.expected_stress_type,
             'stressCause': self.expected_stress_cause,
             'repeatMode': self.repeat_mode,
             'repeatId': self.repetition_id,
-            'eventReminder': self.event_reminder_timedelta,
+            'eventReminder': self.event_reminder,
             'isEvaluated': self.evaluated,
             'repeatTill': self.repeat_till
         }
 
     @staticmethod
-    def create_event(owner: User, title, start_ts, end_ts, intervention, intervention_reminder_timedelta, expected_stress_level, expected_stress_type, expected_stress_cause, event_reminder_timedelta, repeat_mode, repeat_till=-1, repetition_id=-1):
-        intervention.increment_selection_counter()
+    def create_event(owner: User, title, start_ts, end_ts, intervention: Intervention, intervention_reminder_timedelta, expected_stress_level, expected_stress_type, expected_stress_cause, event_reminder_timedelta, repeat_mode, repeat_till=-1, repetition_id=-1):
+        if intervention is not None:
+            intervention.increment_selection_counter()
         if repetition_id != -1:
             return Event.objects.create(
                 owner=owner,
                 title=title,
-                expected_stress_level=expected_stress_level,
                 start_ts=start_ts,
                 end_ts=end_ts,
-                intervention=intervention,
-                intervention_reminder_timedelta=intervention_reminder_timedelta,
-                expected_stress_type=expected_stress_type,
-                expected_stress_cause=expected_stress_cause,
-                repeat_mode=repeat_mode,
                 repetition_id=repetition_id,
-                event_reminder_timedelta=event_reminder_timedelta,
-                repeat_till=repeat_till
+                repeat_mode=repeat_mode,
+                repeat_till=repeat_till,
+                event_reminder=event_reminder_timedelta,
+                intervention=intervention,
+                intervention_reminder=intervention_reminder_timedelta,
+                expected_stress_level=expected_stress_level,
+                expected_stress_type=expected_stress_type,
+                expected_stress_cause=expected_stress_cause
             )
         else:
             event = Event.objects.create(
@@ -186,9 +165,9 @@ class Event(models.Model):
                 end_ts=end_ts,
                 repeat_mode=repeat_mode,
                 repeat_till=repeat_till,
-                event_reminder_timedelta=event_reminder_timedelta,
+                event_reminder=event_reminder_timedelta,
                 intervention=intervention,
-                intervention_reminder_timedelta=intervention_reminder_timedelta,
+                intervention_reminder=intervention_reminder_timedelta,
                 expected_stress_level=expected_stress_level,
                 expected_stress_type=expected_stress_type,
                 expected_stress_cause=expected_stress_cause
@@ -199,7 +178,7 @@ class Event(models.Model):
 
 
 class Evaluation(models.Model):
-    event = models.OneToOneField(to=Event, primary_key=True, on_delete=models.CASCADE)
+    event = models.OneToOneField(to='Event', primary_key=True, on_delete=models.CASCADE)
     start_ts = models.BigIntegerField()
     end_ts = models.BigIntegerField()
     real_stress_level = models.PositiveSmallIntegerField()
@@ -371,7 +350,7 @@ class Survey(models.Model):
         ]
     }
 
-    user = models.ForeignKey(to=User, on_delete=models.CASCADE)
+    user = models.ForeignKey(to='User', on_delete=models.CASCADE)
     timestamp = models.BigIntegerField()
     values = models.CharField(validators=[validate_comma_separated_integer_list], max_length=500)
 
