@@ -4,7 +4,6 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.sessions.models import Session
 from django.db import models
 import datetime
-import json
 import os
 
 from MainModule.settings import BASE_DIR
@@ -12,10 +11,10 @@ from MainModule.settings import BASE_DIR
 
 class User(AbstractUser):
     def to_json(self):
-        return json.dumps({
+        return {
             'username': self.username,
             'name': self.first_name
-        })
+        }
 
     @staticmethod
     def create_user(username, password, name, is_superuser=False):
@@ -53,16 +52,15 @@ class Intervention(models.Model):
         self.save()
 
     def to_json(self):
-        return json.dumps({
-            'id': self.id,
+        return {
             'description': self.description,
-            'creator': self.creator.username if self.creator is not None else 'N/A',
+            'creator': self.creator.username if self.creator is not None else 'SYSTEM',
             'creation_method': self.creation_method,
             'is_public': self.is_public,
             'number_of_selections': self.number_of_selections,
             'number_of_likes': self.number_of_likes,
             'number_of_dislikes': self.number_of_dislikes
-        })
+        }
 
     @staticmethod
     def create_intervention(description, creator: User = None, make_public=False):
@@ -113,7 +111,7 @@ class Event(models.Model):
     expected_stress_level = models.PositiveSmallIntegerField()
     expected_stress_type = models.CharField(max_length=32)
     expected_stress_cause = models.CharField(max_length=128)
-    real_stress_level = models.PositiveSmallIntegerField(default=-1)
+    real_stress_level = models.PositiveSmallIntegerField(default=0)
     evaluated = models.BooleanField(default=False)
 
     def to_json(self):
@@ -355,7 +353,7 @@ class Survey(models.Model):
     values = models.CharField(validators=[validate_comma_separated_integer_list], max_length=500)
 
     def to_json(self):
-        return json.dumps({question: answer for question, answer in zip(Survey.QUESTIONS_LIST, self.values.split(','))})
+        return {question: answer for question, answer in zip(Survey.QUESTIONS_LIST, self.values.split(','))}
 
     @staticmethod
     def survey_str_matches(values):
