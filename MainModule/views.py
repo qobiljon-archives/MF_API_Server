@@ -1,9 +1,11 @@
 # coding=utf-8
 from json import JSONDecodeError
 
+from django.contrib.auth import authenticate
+from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 import calendar as cal
 import datetime
 import random
@@ -90,11 +92,13 @@ def handle_register(request):
         if User.objects.filter(username=params['username']).exists():
             return JsonResponse(data={'result': Result.FAIL})
         else:
-            User.create_user(
+            user = User.create_user(
                 username=params['username'],
                 password=params['password'],
                 name=params['name']
             )
+            user.set_password(params['password'])
+            user.save()
             return JsonResponse(data={'result': Result.OK})
     else:
         return JsonResponse(data={'result': Result.BAD_REQUEST})
@@ -105,8 +109,8 @@ def handle_register(request):
 def handle_login(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists():
-            user = User.objects.get(username=params['username'])
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
             return JsonResponse(data={'result': Result.OK, 'name': user.first_name})
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -119,8 +123,8 @@ def handle_login(request):
 def handle_event_create(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password', 'title', 'stressLevel', 'startTime', 'endTime', 'intervention', 'interventionReminder', 'stressType', 'stressCause', 'repeatTill', 'repeatMode', 'eventReminder']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists() and (len(params['intervention']) == 0 or Intervention.objects.filter(description=params['intervention']).exists()):
-            user = User.objects.get(username=params['username'])
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None and (len(params['intervention']) == 0 or Intervention.objects.filter(description=params['intervention']).exists()):
             intervention = Intervention.objects.get(description=params['intervention']) if len(params['intervention']) > 0 else None
             repeat_mode = int(params['repeatMode'])
             from_ts = int(params['startTime'])
@@ -228,8 +232,8 @@ def handle_event_create(request):
 def handle_event_edit(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'eventId']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists():
-            user = User.objects.get(username=params['username'])
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
             event = Event.objects.get(id=params['eventId'])
             if 'stressLevel' in params:
                 event.stressLevel = params['stressLevel']
@@ -268,8 +272,8 @@ def handle_event_edit(request):
 def handle_event_delete(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']) and ('eventId' in params or 'repeatId' in params):
-        if User.objects.filter(username=params['username'], password=params['password']).exists():
-            user = User.objects.get(username=params['username'])
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
             if 'eventId' in params and Event.objects.filter(owner=user, id=params['eventId']).exists():
                 Event.objects.get(id=params['eventId']).delete()
                 return JsonResponse(data={'result': Result.OK})
@@ -292,8 +296,8 @@ def handle_event_delete(request):
 def handle_events_fetch(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists():
-            user = User.objects.get(username=params['username'])
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
             from_ts = int(params['period_from'])
             till_ts = int(params['period_till'])
             matching_events = []
@@ -317,8 +321,8 @@ def handle_events_fetch(request):
 def handle_intervention_create(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password', 'interventionName']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists() and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
-            user = User.objects.get(username=params['username'])
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
             Intervention.create_intervention(description=params['interventionName'], creator=user)
             return JsonResponse(data={'result': Result.OK})
         else:
@@ -332,7 +336,8 @@ def handle_intervention_create(request):
 def handle_system_intervention_fetch(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists():
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
             system_interventions = []
             for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_SYSTEM, is_public=True):
                 system_interventions += [intervention]
@@ -349,7 +354,8 @@ def handle_system_intervention_fetch(request):
 def handle_peer_intervention_fetch(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists():
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
             system_interventions = []
             for intervention in Intervention.objects.filter(creation_method=Intervention.CREATION_METHOD_USER, is_public=True):
                 system_interventions += [intervention]
@@ -366,7 +372,8 @@ def handle_peer_intervention_fetch(request):
 def handle_evaluation_submit(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password', 'eventId', 'interventionName', 'startTime', 'endTime', 'realStressLevel', 'realStressCause', 'journal', 'eventDone', 'interventionDone', 'sharedIntervention', 'intervEffectiveness']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists() and Event.objects.filter(id=params['eventId'], owner__username=params['username']).exists():
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None and Event.objects.filter(id=params['eventId'], owner=user).exists():
             event = Event.objects.get(eventId=params['eventId'])
             event.realStressLevel = params['realStressLevel']
             event.save()
@@ -407,7 +414,8 @@ def handle_evaluation_submit(request):
 def handle_evaluation_fetch(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password', 'eventId']):
-        if User.objects.filter(username=params['username']).exists() and Event.objects.filter(id=params['eventId'], owner__username=params['username']).exists() and Evaluation.objects.filter(event__id=params['eventId']).exists():
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None and Event.objects.filter(id=params['eventId'], owner=user).exists() and Evaluation.objects.filter(event__id=params['eventId']).exists():
             event = Event.objects.get(id=params['eventId'])
             return JsonResponse(data={'result': Result.OK, 'evaluation': Evaluation.objects.get(event=event).to_json()})
         else:
@@ -421,7 +429,8 @@ def handle_evaluation_fetch(request):
 def handle_survey_submit(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password', 'values']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists() and Survey.survey_str_matches(params['values']):
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None and Survey.survey_str_matches(params['values']):
             user = User.objects.get(username=params['username'])
             Survey.create_survey(user=User.objects.get(username=user), values=params['values'])
             return JsonResponse(data={'result': Result.OK})
@@ -436,7 +445,8 @@ def handle_survey_submit(request):
 def handle_survey_questions_fetch(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']):
-        if User.objects.filter(username=params['username'], password=params['password']).exists():
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
             return JsonResponse(data={'result': Result.OK, 'surveys': Survey.QUESTIONS_LIST})
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -445,6 +455,19 @@ def handle_survey_questions_fetch(request):
 
 
 @csrf_exempt
-@require_http_methods(['POST'])
+@require_http_methods(['POST', 'GET'])
 def handle_extract_data_to_csv(request):
-    return JsonResponse(data={'result': 'NOT IMPLEMENTED'})
+    params = extract_post_params(request)
+    if are_params_filled(params, ['username', 'password']):
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None and user.is_superuser:
+            response = HttpResponse(content_type='text/html')
+            response['Content-Disposition'] = 'attachment; filename="MindForecaster data %s.csv"' % datetime.datetime.now().strftime("%d-%m-%y %H-%M-%S")
+            response.write('hola')
+            return response
+        else:
+            return JsonResponse(data={'result': Result.FAIL})
+    elif request.method == 'GET':
+        return render(request, 'data_extraction_page.html')
+    else:
+        return JsonResponse(data={'result': Result.BAD_REQUEST})
