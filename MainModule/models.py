@@ -369,11 +369,38 @@ class AppUsageStats(models.Model):
     @staticmethod
     def create_app_usage(user, last_time_used, total_time_in_foreground):
         try:
-            return AppUsageStats.objects.create(
-                user=user,
-                last_time_used=last_time_used,
-                total_time_in_foreground=total_time_in_foreground
-            )
+            if AppUsageStats.objects.filter(user=user, last_time_used=last_time_used).exists():
+                stats = AppUsageStats.objects.get(user=user, last_time_used=last_time_used)
+                stats.total_time_in_foreground = total_time_in_foreground
+                stats.save()
+            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used + 1).exists():
+                stats = AppUsageStats.objects.get(user=user, last_time_used=last_time_used + 1)
+                stats.total_time_in_foreground = total_time_in_foreground
+                stats.save()
+            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used + 2).exists():
+                stats = AppUsageStats.objects.get(user=user, last_time_used=last_time_used + 2)
+                stats.total_time_in_foreground = total_time_in_foreground
+                stats.save()
+            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used - 1).exists():
+                AppUsageStats.objects.get(user=user, last_time_used=last_time_used - 1).delete()
+                return AppUsageStats.objects.create(
+                    user=user,
+                    last_time_used=last_time_used,
+                    total_time_in_foreground=total_time_in_foreground
+                )
+            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used - 2).exists():
+                AppUsageStats.objects.get(user=user, last_time_used=last_time_used - 2).delete()
+                return AppUsageStats.objects.create(
+                    user=user,
+                    last_time_used=last_time_used,
+                    total_time_in_foreground=total_time_in_foreground
+                )
+            else:
+                return AppUsageStats.objects.create(
+                    user=user,
+                    last_time_used=last_time_used,
+                    total_time_in_foreground=total_time_in_foreground
+                )
         except IntegrityError as e:
             print(e)
             return None

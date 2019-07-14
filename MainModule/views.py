@@ -85,6 +85,25 @@ def are_params_filled(request_params, prerequisites):
     return len([outer for outer in prerequisites if outer not in request_params]) == 0
 
 
+def seconds_to_readable_str(seconds):
+    if seconds == 0:
+        return '0'
+
+    _hours = int(seconds / 3600)
+    _minutes = int((seconds % 3600) / 60)
+    _seconds = seconds % 60
+
+    res = ''
+    if _hours > 0:
+        res += ' %d hours' % _hours
+    if _minutes > 0:
+        res += ' %d minutes' % _minutes
+    if _seconds > 0:
+        res += ' %d seconds' % _seconds
+
+    return res[1:]
+
+
 @csrf_exempt
 @require_http_methods(['POST'])
 def handle_register(request):
@@ -542,7 +561,17 @@ def handle_extract_data_to_csv(request):
                         survey.values
                     ) for survey in Survey.objects.all()
                 ])
-                response.write('\n')
+            response.write('\n')
+
+            response.write('6. APP USAGE\n')
+            response.write('user,last_time_used,foreground_usage_duration\n')
+            response.writelines([
+                '{0},{1},{2}\n'.format(
+                    usage.user.username,
+                    datetime.datetime.fromtimestamp(usage.last_time_used).strftime('%d/%m/%y %H:%M:%S'),
+                    seconds_to_readable_str(usage.total_time_in_foreground)
+                ) for usage in AppUsageStats.objects.all()
+            ])
             return response
         else:
             return JsonResponse(data={'result': Result.FAIL})
