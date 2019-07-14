@@ -180,8 +180,6 @@ class Event(models.Model):
 
 class Evaluation(models.Model):
     event = models.OneToOneField(to='Event', primary_key=True, on_delete=models.CASCADE)
-    start_ts = models.BigIntegerField()
-    end_ts = models.BigIntegerField()
     real_stress_level = models.PositiveSmallIntegerField()
     real_stress_cause = models.CharField(max_length=128, default='')
     journal = models.CharField(max_length=128, default='')
@@ -191,10 +189,7 @@ class Evaluation(models.Model):
 
     def to_json(self):
         return {
-            'id': self.id,
             'event': self.event.to_json(),
-            'startTime': self.start_ts,
-            'endTime': self.end_ts,
             'realStressLevel': self.real_stress_level,
             'realStressCause': self.real_stress_cause,
             'journal': self.journal,
@@ -204,11 +199,9 @@ class Evaluation(models.Model):
         }
 
     @staticmethod
-    def submit_evaluation_singleton(event, start_ts, end_ts, real_stress_level, real_stress_cause, journal, event_done, intervention_done, intervention_effectiveness):
+    def submit_evaluation_singleton(event, real_stress_level, real_stress_cause, journal, event_done, intervention_done, intervention_effectiveness):
         if Evaluation.objects.filter(event=event).exists():
             evaluation = Evaluation.objects.get(event=event)
-            evaluation.start_ts = start_ts
-            evaluation.end_ts = end_ts
             evaluation.real_stress_level = real_stress_level
             evaluation.real_stress_cause = real_stress_cause
             evaluation.journal = journal
@@ -219,8 +212,6 @@ class Evaluation(models.Model):
         else:
             return Evaluation.objects.create(
                 event=event,
-                start_ts=start_ts,
-                end_ts=end_ts,
                 real_stress_level=real_stress_level,
                 real_stress_cause=real_stress_cause,
                 journal=journal,

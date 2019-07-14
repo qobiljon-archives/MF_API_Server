@@ -77,7 +77,7 @@ def extract_post_params(request):
         try:
             return json.loads(request.body.decode('utf-8'))
         except JSONDecodeError:
-            return None
+            return {}
 
 
 def are_params_filled(request_params, prerequisites):
@@ -241,11 +241,11 @@ def handle_event_edit(request):
                 event.repeatId = params['realStressLevel']
             if 'title' in params:
                 event.title = params['title']
-            if are_params_filled(params, ['startTime', 'endTime']) and not is_user_occupied(user=user, from_ts=params['startTime'], till_ts=params['endTime'], except_event_id=event.id):
+            if are_params_filled(params, ['startTime', 'endTime']) and not is_user_occupied(user=user, from_ts=int(params['startTime']), till_ts=int(params['endTime']), except_event_id=event.id):
                 event.start_ts = params['startTime']
                 event.end_ts = params['endTime']
-            if 'intervention' in params:
-                event.intervention = params['intervention']
+            if 'intervention' in params and Intervention.objects.filter(description=params['intervention']).exists():
+                event.intervention = Intervention.objects.get(description=params['intervention'])
                 event.intervention_last_picked_time = int(datetime.datetime.now().timestamp())
             if 'interventionReminder' in params:
                 event.interventionReminder = params['interventionReminder']
@@ -371,10 +371,10 @@ def handle_peer_intervention_fetch(request):
 @require_http_methods(['POST'])
 def handle_evaluation_submit(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password', 'eventId', 'interventionName', 'startTime', 'endTime', 'realStressLevel', 'realStressCause', 'journal', 'eventDone', 'interventionDone', 'sharedIntervention', 'intervEffectiveness']):
+    if are_params_filled(params, ['username', 'password', 'eventId', 'interventionName', 'realStressLevel', 'realStressCause', 'journal', 'eventDone', 'interventionDone', 'sharedIntervention', 'intervEffectiveness']):
         user = authenticate(username=params['username'], password=params['password'])
         if user is not None and Event.objects.filter(id=params['eventId'], owner=user).exists():
-            event = Event.objects.get(eventId=params['eventId'])
+            event = Event.objects.get(id=params['eventId'])
             event.realStressLevel = params['realStressLevel']
             event.save()
 
@@ -386,16 +386,14 @@ def handle_evaluation_submit(request):
 
             Evaluation.submit_evaluation_singleton(
                 event=event,
-                start_ts=params['startTime'],
-                end_ts=params['endTime'],
                 real_stress_level=params['realStressLevel'],
                 real_stress_cause=params['realStressCause'],
                 journal=params['journal'],
-                event_done=params['eventDone'],
-                intervention_done=params['interventionDone'],
+                event_done=str(params['eventDone']).lower() == 'true',
+                intervention_done=str(params['interventionDone']).lower() == 'true',
                 intervention_effectiveness=params['intervEffectiveness']
             )
-            event = Event.objects.get(eventId=params['eventId'])
+            event = Event.objects.get(id=params['eventId'])
             event.evaluated = True
             event.save()
             if params['sharedIntervention'] and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
@@ -463,11 +461,91 @@ def handle_extract_data_to_csv(request):
         if user is not None and user.is_superuser:
             response = HttpResponse(content_type='text/html')
             response['Content-Disposition'] = 'attachment; filename="MindForecaster data %s.csv"' % datetime.datetime.now().strftime("%d-%m-%y %H-%M-%S")
-            response.write('hola')
+
+            response.write('1. USERS\n')
+            response.write('name,username\n')
+            response.writelines([
+                '{0},{1}\n'.format(
+                    user.first_name,
+                    user.username
+                ) for user in User.objects.filter(is_superuser=False)
+            ])
+            response.write('\n')
+
+            response.write('2. EVENTS\n')
+            response.write('id,owner,title,start,end,intervention,intervention_selection_method,intervention_reminder,intervention_picked_time,expected_stress_level,expected_stress_type,expected_stress_cause,real_stress_level\n')
+            response.writelines([
+                '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12}\n'.format(
+                    event.id,
+                    event.owner,
+                    event.title,
+                    datetime.datetime.fromtimestamp(event.start_ts).strftime('%d/%m/%y %H:%M:%S'),
+                    datetime.datetime.fromtimestamp(event.end_ts).strftime('%d/%m/%y %H:%M:%S'),
+                    event.intervention.description if event.intervention is not None else 'N/A',
+                    ("system" if event.intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else ("self" if event.intervention.creator == event.owner else "peer")) if event.intervention is not None else 'N/A',
+                    '%d mins %s' % (abs(event.intervention_reminder), "before" if event.intervention_reminder < 0 else "after") if event.intervention is not None else 'N/A',
+                    datetime.datetime.fromtimestamp(event.intervention_last_picked_time).strftime('%d/%m/%y %H:%M:%S'),
+                    event.expected_stress_level,
+                    event.expected_stress_type,
+                    event.expected_stress_cause,
+                    Evaluation.objects.get(event=event).real_stress_level if Evaluation.objects.filter(event=event).exists() else 'N/A'
+                ) for event in Event.objects.all()
+            ])
+            response.write('\n')
+
+            response.write('3. INTERVENTIONS\n')
+            response.write('description,creator,number_of_selections,number_of_likes,number_of_dislikes\n')
+            response.writelines([
+                '{0},{1},{2},{3},{4}\n'.format(
+                    intervention.description,
+                    "system" if intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else intervention.creator.username,
+                    intervention.number_of_selections,
+                    intervention.number_of_likes,
+                    intervention.number_of_dislikes
+                ) for intervention in Intervention.objects.all().order_by('creation_method').exclude(number_of_selections=0)
+            ])
+            response.write('\n')
+
+            response.write('4. EVENT EVALUATIONS\n')
+            response.write('submitted_by,event_id,event_title,event_was_done,selected_intervention,intervention_effectiveness,intervention_was_done,expected_stress_level,real_stress_level,expected_stress_cause,real_stress_cause,journal\n')
+            response.writelines([
+                '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}\n'.format(
+                    evaluation.event.owner.username,
+                    evaluation.event.id,
+                    evaluation.event.title,
+                    evaluation.event_done,
+                    evaluation.event.intervention.description if evaluation.event.intervention is not None else 'N/A',
+                    evaluation.intervention_effectiveness if evaluation.event.intervention is not None else 'N/A',
+                    evaluation.intervention_done,
+                    evaluation.event.expected_stress_level,
+                    evaluation.real_stress_level,
+                    evaluation.event.expected_stress_cause,
+                    evaluation.real_stress_cause,
+                    evaluation.journal
+                ) for evaluation in Evaluation.objects.all()
+            ])
+            response.write('\n')
+
+            response.write('5. SURVEYS\n')
+            if Survey.objects.all().count() == 0:
+                response.write('!!! EMPTY !!!\n')
+            else:
+                parts = list(Survey.QUESTIONS_LIST.keys())
+                response.write('user,submission_time,%s\n' % ','.join([parts[0]] + (len(Survey.QUESTIONS_LIST[parts[0]]) - 1) * [''] + [parts[1]] + (len(Survey.QUESTIONS_LIST[parts[1]]) - 1) * [''] + [parts[2]] + (len(Survey.QUESTIONS_LIST[parts[2]]) - 1) * [''] + [parts[3]] + (len(Survey.QUESTIONS_LIST[parts[3]]) - 1) * ['']))
+                response.write(',,%s\n' % ','.join([elem for elem in [question for question in [Survey.QUESTIONS_LIST[part] for part in parts]]]))
+                response.write('\n')
+                response.writelines([
+                    '{0},{1},{2}\n'.format(
+                        survey.user.username,
+                        datetime.datetime.fromtimestamp(survey.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        survey.values
+                    ) for survey in Survey.objects.all()
+                ])
+                response.write('\n')
             return response
         else:
             return JsonResponse(data={'result': Result.FAIL})
     elif request.method == 'GET':
-        return render(request, 'data_extraction_page.html')
+        return render(request, template_name='data_extraction_page.html')
     else:
         return JsonResponse(data={'result': Result.BAD_REQUEST})
