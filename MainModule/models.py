@@ -1,7 +1,7 @@
 # coding=utf-8
 from django.core.validators import validate_comma_separated_integer_list
 from django.contrib.auth.models import AbstractUser
-from django.db import models
+from django.db import models, IntegrityError
 import datetime
 import os
 
@@ -356,3 +356,24 @@ class Survey(models.Model):
     @staticmethod
     def create_survey(user: User, values):
         return Survey.objects.create(user=user, timestamp=int(datetime.datetime.now().timestamp()), values=values)
+
+
+class AppUsageStats(models.Model):
+    class Meta:
+        unique_together = ['user', 'last_time_used', 'total_time_in_foreground']
+
+    user = models.ForeignKey(to='User', on_delete=models.CASCADE)
+    last_time_used = models.BigIntegerField()
+    total_time_in_foreground = models.BigIntegerField()
+
+    @staticmethod
+    def create_app_usage(user, last_time_used, total_time_in_foreground):
+        try:
+            return AppUsageStats.objects.create(
+                user=user,
+                last_time_used=last_time_used,
+                total_time_in_foreground=total_time_in_foreground
+            )
+        except IntegrityError as e:
+            print(e)
+            return None

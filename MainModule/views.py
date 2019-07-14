@@ -11,6 +11,7 @@ import datetime
 import random
 import json
 
+from MainModule.models import AppUsageStats
 from MainModule.models import Intervention
 from MainModule.models import Evaluation
 from MainModule.models import Survey
@@ -547,5 +548,26 @@ def handle_extract_data_to_csv(request):
             return JsonResponse(data={'result': Result.FAIL})
     elif request.method == 'GET':
         return render(request, template_name='data_extraction_page.html')
+    else:
+        return JsonResponse(data={'result': Result.BAD_REQUEST})
+
+
+@csrf_exempt
+@require_http_methods(['POST', 'GET'])
+def handle_usage_stats_submit(request):
+    params = extract_post_params(request)
+    if are_params_filled(params, ['username', 'password', 'app_usage']):
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
+            for element in params['app_usage'].split(','):
+                last_time_used, total_time_in_foreground = [int(value) for value in element.split(' ')]
+                AppUsageStats.create_app_usage(
+                    user=user,
+                    last_time_used=last_time_used,
+                    total_time_in_foreground=total_time_in_foreground
+                )
+            return JsonResponse(data={'result': Result.FAIL, 'reason': 'TO BE IMPLEMENTED'})
+        else:
+            return JsonResponse(data={'result': Result.FAIL, 'reason': 'TO BE IMPLEMENTED'})
     else:
         return JsonResponse(data={'result': Result.BAD_REQUEST})
