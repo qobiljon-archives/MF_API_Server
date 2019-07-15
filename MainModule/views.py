@@ -590,9 +590,9 @@ def handle_usage_stats_submit(request):
         if user is not None:
             for element in params['app_usage'].split(','):
                 last_time_used, total_time_in_foreground = [int(value) for value in element.split(' ')]
-                AppUsageStats.create_app_usage(
+                AppUsageStats.store_usage_changes(
                     user=user,
-                    last_time_used=last_time_used,
+                    end_timestamp=last_time_used,
                     total_time_in_foreground=total_time_in_foreground
                 )
             return JsonResponse(data={'result': Result.FAIL, 'reason': 'TO BE IMPLEMENTED'})

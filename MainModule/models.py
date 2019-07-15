@@ -1,7 +1,7 @@
 # coding=utf-8
 from django.core.validators import validate_comma_separated_integer_list
 from django.contrib.auth.models import AbstractUser
-from django.db import models, IntegrityError
+from django.db import models
 import datetime
 import os
 
@@ -360,47 +360,80 @@ class Survey(models.Model):
 
 class AppUsageStats(models.Model):
     class Meta:
-        unique_together = ['user', 'last_time_used', 'total_time_in_foreground']
+        unique_together = ['user', 'start_timestamp']
 
     user = models.ForeignKey(to='User', on_delete=models.CASCADE)
-    last_time_used = models.BigIntegerField()
-    total_time_in_foreground = models.BigIntegerField()
+    start_timestamp = models.BigIntegerField()
+    end_timestamp = models.BigIntegerField()
+    total_time_in_foreground = models.IntegerField()
 
     @staticmethod
-    def create_app_usage(user, last_time_used, total_time_in_foreground):
-        try:
-            if AppUsageStats.objects.filter(user=user, last_time_used=last_time_used).exists():
-                stats = AppUsageStats.objects.get(user=user, last_time_used=last_time_used)
-                stats.total_time_in_foreground = total_time_in_foreground
-                stats.save()
-            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used + 1).exists():
-                stats = AppUsageStats.objects.get(user=user, last_time_used=last_time_used + 1)
-                stats.total_time_in_foreground = total_time_in_foreground
-                stats.save()
-            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used + 2).exists():
-                stats = AppUsageStats.objects.get(user=user, last_time_used=last_time_used + 2)
-                stats.total_time_in_foreground = total_time_in_foreground
-                stats.save()
-            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used - 1).exists():
-                AppUsageStats.objects.get(user=user, last_time_used=last_time_used - 1).delete()
-                return AppUsageStats.objects.create(
-                    user=user,
-                    last_time_used=last_time_used,
-                    total_time_in_foreground=total_time_in_foreground
-                )
-            elif AppUsageStats.objects.filter(user=user, last_time_used=last_time_used - 2).exists():
-                AppUsageStats.objects.get(user=user, last_time_used=last_time_used - 2).delete()
-                return AppUsageStats.objects.create(
-                    user=user,
-                    last_time_used=last_time_used,
-                    total_time_in_foreground=total_time_in_foreground
-                )
+    def get_overlapping_elements(user, from_timestamp, till_timestamp):
+        # CASE: old_start_ts < from_timestamp < old_end_ts
+        if AppUsageStats.objects.filter(user=user, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp).exists():
+            return AppUsageStats.objects.filter(user=user, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp)
+
+        # CASE: old_start_ts < till_timestamp < old_end_ts
+        elif AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp).exists():
+            return AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp)
+
+        # CASE: from_timestamp < old_start_ts & old_end_ts < till_timestamp
+        elif AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp).exists():
+            return AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp)
+
+    @staticmethod
+    def store_usage_changes(user, end_timestamp, total_time_in_foreground):
+        # the first element of the table
+        if not AppUsageStats.objects.exists():
+            return AppUsageStats.objects.create(
+                user=user,
+                start_timestamp=end_timestamp - total_time_in_foreground,
+                end_timestamp=end_timestamp,
+                total_time_in_foreground=total_time_in_foreground
+            )
+        # next elements of the table
+        else:
+            last_usage = AppUsageStats.objects.filter(user=user).order_by('-end_timestamp')[0]
+            start_timestamp = end_timestamp - (total_time_in_foreground - last_usage.total_time_in_foreground)
+            if start_timestamp == end_timestamp:
+                print('Zero length app usage ignored: user={0}, start_timestamp={1}, end_timestamp={2}, total_time_in_foreground={3}'.format(
+                    user,
+                    start_timestamp,
+                    end_timestamp,
+                    total_time_in_foreground
+                ))
+                return None
+            if AppUsageStats.objects.filter(user=user, start_timestamp=start_timestamp).exists():
+                print('Duplicate app usage ignored: user={0}, start_timestamp={1}, end_timestamp={2}, total_time_in_foreground={3}'.format(
+                    user,
+                    start_timestamp,
+                    end_timestamp,
+                    total_time_in_foreground
+                ))
+                return None
             else:
-                return AppUsageStats.objects.create(
-                    user=user,
-                    last_time_used=last_time_used,
-                    total_time_in_foreground=total_time_in_foreground
-                )
-        except IntegrityError as e:
-            print(e)
-            return None
+                overlapping_elements = AppUsageStats.get_overlapping_elements(user, start_timestamp, end_timestamp)
+                if overlapping_elements is None:
+                    return AppUsageStats.objects.create(
+                        user=user,
+                        start_timestamp=start_timestamp,
+                        end_timestamp=end_timestamp,
+                        total_time_in_foreground=total_time_in_foreground
+                    )
+                else:
+                    min_start_timestamp = start_timestamp
+                    max_end_timestamp = end_timestamp
+                    max_total_time_in_foreground = total_time_in_foreground
+
+                    for overlapping_element in overlapping_elements:
+                        min_start_timestamp = min(start_timestamp, overlapping_element.start_timestamp)
+                        max_end_timestamp = min(end_timestamp, overlapping_element.end_timestamp)
+                        max_total_time_in_foreground = min(total_time_in_foreground, overlapping_element.total_time_in_foreground)
+                        overlapping_elements.delete()
+
+                    return AppUsageStats.objects.create(
+                        user=user,
+                        start_timestamp=min_start_timestamp,
+                        end_timestamp=max_end_timestamp,
+                        total_time_in_foreground=max_total_time_in_foreground
+                    )
