@@ -108,10 +108,10 @@ class Event(models.Model):
     intervention = models.ForeignKey(to='Intervention', null=True, on_delete=models.SET_NULL)
     intervention_reminder = models.SmallIntegerField(default=0)
     intervention_last_picked_time = models.BigIntegerField()
-    expected_stress_level = models.PositiveSmallIntegerField()
+    expected_stress_level = models.SmallIntegerField(default=-1)
     expected_stress_type = models.CharField(max_length=32)
     expected_stress_cause = models.CharField(max_length=128)
-    real_stress_level = models.PositiveSmallIntegerField(default=0)
+    real_stress_level = models.SmallIntegerField(default=-1)
     evaluated = models.BooleanField(default=False)
 
     def to_json(self):
@@ -120,15 +120,15 @@ class Event(models.Model):
             'ownerUsername': self.owner.username,
             'ownerFullName': self.owner.first_name,
             'title': self.title,
-            'stressLevel': self.expected_stress_level,
-            'realStressLevel': self.real_stress_level,
+            'stressLevel': self.expected_stress_level if self.expected_stress_level != -1 else 'N/A',
+            'realStressLevel': self.real_stress_level if self.real_stress_level != -1 else 'N/A',
+            'stressCause': self.expected_stress_cause if self.expected_stress_level > 0 else 'N/A',
+            'stressType': self.expected_stress_type if self.expected_stress_level > 0 else 'N/A',
             'startTime': self.start_ts,
             'endTime': self.end_ts,
             'intervention': self.intervention.to_json() if self.intervention is not None else 'N/A',
             'interventionReminder': self.intervention_reminder,
             'interventionLastPickedTime': self.intervention_last_picked_time,
-            'stressType': self.expected_stress_type,
-            'stressCause': self.expected_stress_cause,
             'repeatMode': self.repeat_mode,
             'repeatId': self.repetition_id,
             'eventReminder': self.event_reminder,
@@ -393,7 +393,7 @@ class AppUsageStats(models.Model):
             )
         # next elements of the table
         else:
-            last_usage = AppUsageStats.objects.filter(user=user).order_by('-end_timestamp')[0]
+            last_usage: AppUsageStats = AppUsageStats.objects.filter(user=user).order_by('-end_timestamp')[0]
             start_timestamp = end_timestamp - (total_time_in_foreground - last_usage.total_time_in_foreground)
             if start_timestamp == end_timestamp:
                 print('Zero length app usage ignored: user={0}, start_timestamp={1}, end_timestamp={2}, total_time_in_foreground={3}'.format(
@@ -403,6 +403,10 @@ class AppUsageStats(models.Model):
                     total_time_in_foreground
                 ))
                 return None
+            elif start_timestamp == last_usage.end_timestamp:
+                last_usage.total_time_in_foreground = total_time_in_foreground
+                last_usage.end_timestamp = end_timestamp
+                last_usage.save()
             if AppUsageStats.objects.filter(user=user, start_timestamp=start_timestamp).exists():
                 print('Duplicate app usage ignored: user={0}, start_timestamp={1}, end_timestamp={2}, total_time_in_foreground={3}'.format(
                     user,

@@ -416,7 +416,7 @@ def handle_evaluation_submit(request):
             event = Event.objects.get(id=params['eventId'])
             event.evaluated = True
             event.save()
-            if params['sharedIntervention'] and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
+            if params['sharedIntervention'].lower() == 'true' and Intervention.objects.filter(description=params['interventionName']).exists() and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
                 intervention = Intervention.objects.get(description=params['interventionName'])
                 intervention.is_public = True
                 intervention.save()
