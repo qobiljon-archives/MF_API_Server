@@ -564,14 +564,16 @@ def handle_extract_data_to_csv(request):
             response.write('\n')
 
             response.write('6. APP USAGE\n')
-            response.write('user,last_time_used,foreground_usage_duration\n')
-            response.writelines([
-                '{0},{1},{2}\n'.format(
-                    usage.user.username,
-                    datetime.datetime.fromtimestamp(usage.last_time_used).strftime('%d/%m/%y %H:%M:%S'),
-                    seconds_to_readable_str(usage.total_time_in_foreground)
-                ) for usage in AppUsageStats.objects.all()
-            ])
+            response.write('user,usage_start_time,usage_end_time,total_usage_by_far\n')
+            for user in User.objects.filter(is_superuser=False):
+                response.writelines([
+                    '{0},{1},{2},{3}\n'.format(
+                        usage.user.username,
+                        datetime.datetime.fromtimestamp(usage.start_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        datetime.datetime.fromtimestamp(usage.end_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        seconds_to_readable_str(usage.total_time_in_foreground)
+                    ) for usage in AppUsageStats.objects.filter(user=user).order_by('total_time_in_foreground')
+                ])
             return response
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -582,7 +584,7 @@ def handle_extract_data_to_csv(request):
 
 
 @csrf_exempt
-@require_http_methods(['POST', 'GET'])
+@require_http_methods(['POST'])
 def handle_usage_stats_submit(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password', 'app_usage']):
