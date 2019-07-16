@@ -416,7 +416,7 @@ def handle_evaluation_submit(request):
             event = Event.objects.get(id=params['eventId'])
             event.evaluated = True
             event.save()
-            if params['sharedIntervention'] and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
+            if params['sharedIntervention'].lower() == 'true' and Intervention.objects.filter(description=params['interventionName']).exists() and not Intervention.objects.filter(description=params['interventionName'], is_public=True).exists():
                 intervention = Intervention.objects.get(description=params['interventionName'])
                 intervention.is_public = True
                 intervention.save()
@@ -564,14 +564,16 @@ def handle_extract_data_to_csv(request):
             response.write('\n')
 
             response.write('6. APP USAGE\n')
-            response.write('user,last_time_used,foreground_usage_duration\n')
-            response.writelines([
-                '{0},{1},{2}\n'.format(
-                    usage.user.username,
-                    datetime.datetime.fromtimestamp(usage.last_time_used).strftime('%d/%m/%y %H:%M:%S'),
-                    seconds_to_readable_str(usage.total_time_in_foreground)
-                ) for usage in AppUsageStats.objects.all()
-            ])
+            response.write('user,usage_start_time,usage_end_time,total_usage_by_far\n')
+            for user in User.objects.filter(is_superuser=False):
+                response.writelines([
+                    '{0},{1},{2},{3}\n'.format(
+                        usage.user.username,
+                        datetime.datetime.fromtimestamp(usage.start_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        datetime.datetime.fromtimestamp(usage.end_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        seconds_to_readable_str(usage.total_time_in_foreground)
+                    ) for usage in AppUsageStats.objects.filter(user=user).order_by('total_time_in_foreground')
+                ])
             return response
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -582,7 +584,7 @@ def handle_extract_data_to_csv(request):
 
 
 @csrf_exempt
-@require_http_methods(['POST', 'GET'])
+@require_http_methods(['POST'])
 def handle_usage_stats_submit(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password', 'app_usage']):
@@ -590,9 +592,9 @@ def handle_usage_stats_submit(request):
         if user is not None:
             for element in params['app_usage'].split(','):
                 last_time_used, total_time_in_foreground = [int(value) for value in element.split(' ')]
-                AppUsageStats.create_app_usage(
+                AppUsageStats.store_usage_changes(
                     user=user,
-                    last_time_used=last_time_used,
+                    end_timestamp=last_time_used,
                     total_time_in_foreground=total_time_in_foreground
                 )
             return JsonResponse(data={'result': Result.FAIL, 'reason': 'TO BE IMPLEMENTED'})
