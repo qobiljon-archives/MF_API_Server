@@ -3,10 +3,10 @@ from django.contrib import admin
 from django.conf.urls import url
 from django.urls import re_path
 
-#from MainModule.models import Intervention
+from MainModule.models import Intervention
 from MainModule import views
 
-#Intervention.create_system_interventions()
+Intervention.create_system_interventions()
 
 urlpatterns = [
     url('admin/', admin.site.urls),
