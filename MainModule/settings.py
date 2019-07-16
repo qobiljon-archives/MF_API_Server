@@ -10,7 +10,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_KEY = '4fyyo2&3%5qn00_0^8!%b)zi*v77-n3rjqlr7kc3bj0fhr0^ps'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = [
     "kwangyoung.pythonanywhere.com",
@@ -68,7 +68,7 @@ WSGI_APPLICATION = 'MainModule.wsgi.application'
 
 DATABASES = {
     'default': {
-		'ENGINE': 'django.db.backends.mysql',
+        'ENGINE': 'django.db.backends.mysql',
         'NAME': 'kwangyoung$default',
         'HOST': 'kwangyoung.mysql.pythonanywhere-services.com',
         'USER': 'kwangyoung',
@@ -76,12 +76,12 @@ DATABASES = {
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
         }
-	}
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.sqlite3',
-    #     'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
-    # }
-
+    }
+} if DEBUG else {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+    }
 }
 
 # Password validation
