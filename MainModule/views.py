@@ -597,8 +597,29 @@ def handle_usage_stats_submit(request):
                     end_timestamp=last_time_used,
                     total_time_in_foreground=total_time_in_foreground
                 )
-            return JsonResponse(data={'result': Result.FAIL, 'reason': 'TO BE IMPLEMENTED'})
+            return JsonResponse(data={'result': Result.OK})
         else:
-            return JsonResponse(data={'result': Result.FAIL, 'reason': 'TO BE IMPLEMENTED'})
+            return JsonResponse(data={'result': Result.FAIL})
+    else:
+        return JsonResponse(data={'result': Result.BAD_REQUEST})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def handle_location_data_submit(request):
+    params = extract_post_params(request)
+    if are_params_filled(params, ['username', 'password', 'app_usage']):
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
+            for element in params['app_usage'].split(','):
+                last_time_used, total_time_in_foreground = [int(value) for value in element.split(' ')]
+                AppUsageStats.store_usage_changes(
+                    user=user,
+                    end_timestamp=last_time_used,
+                    total_time_in_foreground=total_time_in_foreground
+                )
+            return JsonResponse(data={'result': Result.OK})
+        else:
+            return JsonResponse(data={'result': Result.FAIL})
     else:
         return JsonResponse(data={'result': Result.BAD_REQUEST})

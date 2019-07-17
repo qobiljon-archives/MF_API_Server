@@ -441,3 +441,28 @@ class AppUsageStats(models.Model):
                         end_timestamp=max_end_timestamp,
                         total_time_in_foreground=max_total_time_in_foreground
                     )
+
+
+class LocationData(models.Model):
+    class Meta:
+        unique_together = ['user', 'timestamp']
+
+    user = models.ForeignKey(to='User', on_delete=models.CASCADE)
+    timestamp = models.BigIntegerField()
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    bearing = models.FloatField()
+    altitude = models.FloatField()
+    speed = models.FloatField()
+
+    @staticmethod
+    def create_location_data(user, timestamp, latitude, longitude, bearing, altitude, speed):
+        return LocationData.objects.create(
+            user=user,
+            timestamp=timestamp,
+            latitude=latitude,
+            longitude=longitude,
+            bearing=bearing,
+            altitude=altitude,
+            speed=speed
+        )

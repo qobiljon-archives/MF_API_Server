@@ -31,5 +31,6 @@ urlpatterns = [
 
     re_path(r'^extract_data/?$', views.handle_extract_data_to_csv),
 
-    re_path(r'^usage_stats_submit/?$', views.handle_usage_stats_submit)
+    re_path(r'^usage_stats_submit/?$', views.handle_usage_stats_submit),
+    re_path(r'^location_data_submit/?$', views.handle_location_data_submit)
 ]
