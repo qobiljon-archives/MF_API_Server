@@ -609,11 +609,11 @@ def handle_usage_stats_submit(request):
 @require_http_methods(['POST'])
 def handle_location_data_submit(request):
     params = extract_post_params(request)
-    if are_params_filled(params, ['username', 'password', 'app_usage']):
+    if are_params_filled(params, ['username', 'password', 'data']):
         user = authenticate(username=params['username'], password=params['password'])
         if user is not None:
             data = params['data']
-            for line in data.split(','):
+            for line in data.split('\n'):
                 timestamp, latitude, longitude, bearing, altitude, speed = line.split(' ')
                 timestamp, latitude, longitude, bearing, altitude, speed = int(timestamp), float(latitude), float(longitude), float(bearing), float(altitude), float(speed)
                 LocationData.create_location_data(
