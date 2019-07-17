@@ -466,3 +466,19 @@ class LocationData(models.Model):
             altitude=altitude,
             speed=speed
         )
+
+
+class ActivityRecognitionData(models.Model):
+    user = models.ForeignKey(to='User', on_delete=models.CASCADE)
+    timestamp = models.BigIntegerField()
+    activity = models.CharField(max_length=16)
+    transition = models.CharField(max_length=8)
+
+    @staticmethod
+    def create_activity_recognition_data(user, timestamp, activity, transition):
+        return ActivityRecognitionData.objects.create(
+            user=user,
+            timestamp=timestamp,
+            activity=activity,
+            transition=transition,
+        )

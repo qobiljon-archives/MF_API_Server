@@ -11,6 +11,7 @@ import datetime
 import random
 import json
 
+from MainModule.models import ActivityRecognitionData
 from MainModule.models import AppUsageStats
 from MainModule.models import LocationData
 from MainModule.models import Intervention
@@ -575,6 +576,35 @@ def handle_extract_data_to_csv(request):
                         seconds_to_readable_str(usage.total_time_in_foreground)
                     ) for usage in AppUsageStats.objects.filter(user=user).order_by('total_time_in_foreground')
                 ])
+            response.write('\n')
+
+            response.write('7. GPS Locations\n')
+            response.write('user,timestamp,latitude,longitude,bearing,altitude,speed (m/s)\n')
+            for user in User.objects.filter(is_superuser=False):
+                response.writelines([
+                    '{0},{1},{2},{3},{4},{5},{6}\n'.format(
+                        location.user.username,
+                        datetime.datetime.fromtimestamp(location.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        location.latitude,
+                        location.longitude,
+                        location.bearing,
+                        location.altitude,
+                        '%.4f m/s' % location.speed,
+                    ) for location in LocationData.objects.filter(user=user).order_by('timestamp')
+                ])
+            response.write('\n')
+
+            response.write('8. Activity Recognitions\n')
+            response.write('user,detection_time_of_transition,detected_activity,transition\n')
+            for user in User.objects.filter(is_superuser=False):
+                response.writelines([
+                    '{0},{1},{2},{3}\n'.format(
+                        activity.user.username,
+                        datetime.datetime.fromtimestamp(activity.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        activity.activity,
+                        activity.transition
+                    ) for activity in ActivityRecognitionData.objects.filter(user=user).order_by('timestamp')
+                ])
             return response
         else:
             return JsonResponse(data={'result': Result.FAIL})
@@ -624,6 +654,30 @@ def handle_location_data_submit(request):
                     bearing=bearing,
                     altitude=altitude,
                     speed=speed
+                )
+            return JsonResponse(data={'result': Result.OK})
+        else:
+            return JsonResponse(data={'result': Result.FAIL})
+    else:
+        return JsonResponse(data={'result': Result.BAD_REQUEST})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def handle_activity_recognition_submit(request):
+    params = extract_post_params(request)
+    if are_params_filled(params, ['username', 'password', 'data']):
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None:
+            data = params['data']
+            for line in data.split('\n'):
+                timestamp, activity, transition = line.split(' ')
+                timestamp = int(timestamp)
+                ActivityRecognitionData.create_activity_recognition_data(
+                    user=user,
+                    timestamp=timestamp,
+                    activity=activity,
+                    transition=transition
                 )
             return JsonResponse(data={'result': Result.OK})
         else:
