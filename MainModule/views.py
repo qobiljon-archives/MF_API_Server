@@ -12,6 +12,7 @@ import random
 import json
 
 from MainModule.models import AppUsageStats
+from MainModule.models import LocationData
 from MainModule.models import Intervention
 from MainModule.models import Evaluation
 from MainModule.models import Survey
@@ -611,12 +612,18 @@ def handle_location_data_submit(request):
     if are_params_filled(params, ['username', 'password', 'app_usage']):
         user = authenticate(username=params['username'], password=params['password'])
         if user is not None:
-            for element in params['app_usage'].split(','):
-                last_time_used, total_time_in_foreground = [int(value) for value in element.split(' ')]
-                AppUsageStats.store_usage_changes(
+            data = params['data']
+            for line in data.split(','):
+                timestamp, latitude, longitude, bearing, altitude, speed = line.split(' ')
+                timestamp, latitude, longitude, bearing, altitude, speed = int(timestamp), float(latitude), float(longitude), float(bearing), float(altitude), float(speed)
+                LocationData.create_location_data(
                     user=user,
-                    end_timestamp=last_time_used,
-                    total_time_in_foreground=total_time_in_foreground
+                    timestamp=timestamp,
+                    latitude=latitude,
+                    longitude=longitude,
+                    bearing=bearing,
+                    altitude=altitude,
+                    speed=speed
                 )
             return JsonResponse(data={'result': Result.OK})
         else:
