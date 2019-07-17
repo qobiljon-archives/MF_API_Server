@@ -476,6 +476,9 @@ class ActivityRecognitionData(models.Model):
 
     @staticmethod
     def create_activity_recognition_data(user, timestamp, activity, transition):
+        duplicates = ActivityRecognitionData.objects.filter(user=user, timestamp=timestamp, activity=activity, transition=transition)
+        if duplicates.exists():
+            duplicates.delete()
         return ActivityRecognitionData.objects.create(
             user=user,
             timestamp=timestamp,
