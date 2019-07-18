@@ -644,16 +644,14 @@ def handle_location_data_submit(request):
         if user is not None:
             data = params['data']
             for line in data.split('\n'):
-                timestamp, latitude, longitude, bearing, altitude, speed = line.split(' ')
-                timestamp, latitude, longitude, bearing, altitude, speed = int(timestamp), float(latitude), float(longitude), float(bearing), float(altitude), float(speed)
+                timestamp, latitude, longitude, altitude = line.split(' ')
+                timestamp, latitude, longitude, altitude = int(timestamp), float(latitude), float(longitude), float(altitude)
                 LocationData.create_location_data(
                     user=user,
                     timestamp=timestamp,
                     latitude=latitude,
                     longitude=longitude,
-                    bearing=bearing,
-                    altitude=altitude,
-                    speed=speed
+                    altitude=altitude
                 )
             return JsonResponse(data={'result': Result.OK})
         else:

@@ -451,20 +451,16 @@ class LocationData(models.Model):
     timestamp = models.BigIntegerField()
     latitude = models.FloatField()
     longitude = models.FloatField()
-    bearing = models.FloatField()
     altitude = models.FloatField()
-    speed = models.FloatField()
 
     @staticmethod
-    def create_location_data(user, timestamp, latitude, longitude, bearing, altitude, speed):
+    def create_location_data(user, timestamp, latitude, longitude, altitude):
         return LocationData.objects.create(
             user=user,
             timestamp=timestamp,
             latitude=latitude,
             longitude=longitude,
-            bearing=bearing,
-            altitude=altitude,
-            speed=speed
+            altitude=altitude
         )
 
 
