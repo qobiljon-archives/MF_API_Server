@@ -595,14 +595,14 @@ def handle_extract_data_to_csv(request):
             response.write('\n')
 
             response.write('8. Activity Recognitions\n')
-            response.write('user,detection_time_of_transition,detected_activity,transition\n')
+            response.write('user,timestamp,detected_activity,confidence\n')
             for user in User.objects.filter(is_superuser=False):
                 response.writelines([
                     '{0},{1},{2},{3}\n'.format(
                         activity.user.username,
                         datetime.datetime.fromtimestamp(activity.timestamp).strftime('%d/%m/%y %H:%M:%S'),
                         activity.activity,
-                        activity.transition
+                        activity.confidence
                     ) for activity in ActivityRecognitionData.objects.filter(user=user).order_by('timestamp')
                 ])
             return response
@@ -669,13 +669,13 @@ def handle_activity_recognition_submit(request):
         if user is not None:
             data = params['data']
             for line in data.split('\n'):
-                timestamp, activity, transition = line.split(' ')
-                timestamp = int(timestamp)
+                timestamp, activity, confidence = line.split(' ')
+                timestamp, confidence = int(timestamp), float(confidence)
                 ActivityRecognitionData.create_activity_recognition_data(
                     user=user,
                     timestamp=timestamp,
                     activity=activity,
-                    transition=transition
+                    confidence=confidence
                 )
             return JsonResponse(data={'result': Result.OK})
         else:

@@ -455,29 +455,40 @@ class LocationData(models.Model):
 
     @staticmethod
     def create_location_data(user, timestamp, latitude, longitude, altitude):
-        return LocationData.objects.create(
-            user=user,
-            timestamp=timestamp,
-            latitude=latitude,
-            longitude=longitude,
-            altitude=altitude
-        )
+        if LocationData.objects.filter(user=user, timestamp=timestamp).exists():
+            print('duplicate location ignored (%s, %d, %f, %f, %f)' % (user, timestamp, latitude, longitude, altitude))
+        else:
+            return LocationData.objects.create(
+                user=user,
+                timestamp=timestamp,
+                latitude=latitude,
+                longitude=longitude,
+                altitude=altitude
+            )
 
 
 class ActivityRecognitionData(models.Model):
+    class Meta:
+        unique_together = ['user', 'timestamp']
+
     user = models.ForeignKey(to='User', on_delete=models.CASCADE)
     timestamp = models.BigIntegerField()
     activity = models.CharField(max_length=16)
-    transition = models.CharField(max_length=8)
+    confidence = models.FloatField()
 
     @staticmethod
-    def create_activity_recognition_data(user, timestamp, activity, transition):
-        duplicates = ActivityRecognitionData.objects.filter(user=user, timestamp=timestamp, activity=activity, transition=transition)
-        if duplicates.exists():
-            duplicates.delete()
-        return ActivityRecognitionData.objects.create(
-            user=user,
-            timestamp=timestamp,
-            activity=activity,
-            transition=transition,
-        )
+    def create_activity_recognition_data(user, timestamp, activity, confidence):
+        if ActivityRecognitionData.objects.filter(user=user, timestamp=timestamp).exists():
+            elem = ActivityRecognitionData.objects.get(user=user, timestamp=timestamp)
+            elem.activity = activity
+            elem.confidence = confidence
+            elem.save()
+            print('existing activity-recognition updated (%s, %.3f)' % (activity, confidence))
+        else:
+            print('new activity-recognition data stored (%s, %.3f)' % (activity, confidence))
+            return ActivityRecognitionData.objects.create(
+                user=user,
+                timestamp=timestamp,
+                activity=activity,
+                confidence=confidence
+            )
