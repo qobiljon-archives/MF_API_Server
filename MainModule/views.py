@@ -487,7 +487,7 @@ def handle_extract_data_to_csv(request):
             response.write('1. USERS\n')
             response.write('name,username\n')
             response.writelines([
-                '{0},{1}\n'.format(
+                '"{0}","{1}"\n'.format(
                     user.first_name,
                     user.username
                 ) for user in User.objects.filter(is_superuser=False)
@@ -497,9 +497,9 @@ def handle_extract_data_to_csv(request):
             response.write('2. EVENTS\n')
             response.write('id,owner,title,start,end,intervention,intervention_selection_method,intervention_reminder,intervention_picked_time,expected_stress_level,expected_stress_type,expected_stress_cause,real_stress_level\n')
             response.writelines([
-                '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12}\n'.format(
+                '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}","{12}"\n'.format(
                     event.id,
-                    event.owner,
+                    event.owner.username,
                     event.title,
                     datetime.datetime.fromtimestamp(event.start_ts).strftime('%d/%m/%y %H:%M:%S'),
                     datetime.datetime.fromtimestamp(event.end_ts).strftime('%d/%m/%y %H:%M:%S'),
@@ -509,7 +509,7 @@ def handle_extract_data_to_csv(request):
                     datetime.datetime.fromtimestamp(event.intervention_last_picked_time).strftime('%d/%m/%y %H:%M:%S'),
                     event.expected_stress_level,
                     event.expected_stress_type,
-                    event.expected_stress_cause,
+                    event.expected_stress_cause if event.expected_stress_level != -1 and event.expected_stress_cause != '' else 'N/A',
                     Evaluation.objects.get(event=event).real_stress_level if Evaluation.objects.filter(event=event).exists() else 'N/A'
                 ) for event in Event.objects.all()
             ])
@@ -518,7 +518,7 @@ def handle_extract_data_to_csv(request):
             response.write('3. INTERVENTIONS\n')
             response.write('description,creator,number_of_selections,number_of_likes,number_of_dislikes\n')
             response.writelines([
-                '{0},{1},{2},{3},{4}\n'.format(
+                '"{0}","{1}","{2}","{3}","{4}"\n'.format(
                     intervention.description,
                     "system" if intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else intervention.creator.username,
                     intervention.number_of_selections,
@@ -531,7 +531,7 @@ def handle_extract_data_to_csv(request):
             response.write('4. EVENT EVALUATIONS\n')
             response.write('submitted_by,event_id,event_title,event_was_done,selected_intervention,intervention_effectiveness,intervention_was_done,expected_stress_level,real_stress_level,expected_stress_cause,real_stress_cause,journal\n')
             response.writelines([
-                '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}\n'.format(
+                '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}"\n'.format(
                     evaluation.event.owner.username,
                     evaluation.event.id,
                     evaluation.event.title,
@@ -553,14 +553,18 @@ def handle_extract_data_to_csv(request):
                 response.write('!!! EMPTY !!!\n')
             else:
                 parts = list(Survey.QUESTIONS_LIST.keys())
-                response.write('user,submission_time,%s\n' % ','.join([parts[0]] + (len(Survey.QUESTIONS_LIST[parts[0]]) - 1) * [''] + [parts[1]] + (len(Survey.QUESTIONS_LIST[parts[1]]) - 1) * [''] + [parts[2]] + (len(Survey.QUESTIONS_LIST[parts[2]]) - 1) * [''] + [parts[3]] + (len(Survey.QUESTIONS_LIST[parts[3]]) - 1) * ['']))
-                response.write(',,%s\n' % ','.join([elem for elem in [question for question in [Survey.QUESTIONS_LIST[part] for part in parts]]]))
-                response.write('\n')
+                response.write('user,submission_time,%s\n' % ','.join([parts[0]] + (len(Survey.QUESTIONS_LIST[parts[0]]) - 1) * [''] + [parts[1]] + (len(Survey.QUESTIONS_LIST[parts[1]]) - 1) * [''] + [parts[2]] + (len(Survey.QUESTIONS_LIST[parts[2]]) - 1) * ['']))
+                questions = ''
+                for part in parts:
+                    questions += '%s,' % ','.join(['"%s"' % question for question in Survey.QUESTIONS_LIST[part]])
+                if questions.endswith(','):
+                    questions = questions[:-1]
+                response.write('"","",%s\n' % questions)
                 response.writelines([
-                    '{0},{1},{2}\n'.format(
+                    '"{0}","{1}",{2}\n'.format(
                         survey.user.username,
                         datetime.datetime.fromtimestamp(survey.timestamp).strftime('%d/%m/%y %H:%M:%S'),
-                        survey.values
+                        ','.join('"%s"' % value for value in survey.values.split(','))
                     ) for survey in Survey.objects.all()
                 ])
             response.write('\n')
@@ -569,27 +573,25 @@ def handle_extract_data_to_csv(request):
             response.write('user,usage_start_time,usage_end_time,total_usage_by_far\n')
             for user in User.objects.filter(is_superuser=False):
                 response.writelines([
-                    '{0},{1},{2},{3}\n'.format(
+                    '"{0}","{1}","{2}","{3}"\n'.format(
                         usage.user.username,
                         datetime.datetime.fromtimestamp(usage.start_timestamp).strftime('%d/%m/%y %H:%M:%S'),
                         datetime.datetime.fromtimestamp(usage.end_timestamp).strftime('%d/%m/%y %H:%M:%S'),
                         seconds_to_readable_str(usage.total_time_in_foreground)
-                    ) for usage in AppUsageStats.objects.filter(user=user).order_by('total_time_in_foreground')
+                    ) for usage in AppUsageStats.objects.filter(user=user).exclude(total_time_in_foreground=0).order_by('total_time_in_foreground')
                 ])
             response.write('\n')
 
             response.write('7. GPS Locations\n')
-            response.write('user,timestamp,latitude,longitude,bearing,altitude,speed (m/s)\n')
+            response.write('user,timestamp,latitude,longitude,altitude\n')
             for user in User.objects.filter(is_superuser=False):
                 response.writelines([
-                    '{0},{1},{2},{3},{4},{5},{6}\n'.format(
+                    '"{0}","{1}","{2}","{3}","{4}"\n'.format(
                         location.user.username,
                         datetime.datetime.fromtimestamp(location.timestamp).strftime('%d/%m/%y %H:%M:%S'),
                         location.latitude,
                         location.longitude,
-                        location.bearing,
-                        location.altitude,
-                        '%.4f m/s' % location.speed,
+                        location.altitude
                     ) for location in LocationData.objects.filter(user=user).order_by('timestamp')
                 ])
             response.write('\n')
@@ -598,7 +600,7 @@ def handle_extract_data_to_csv(request):
             response.write('user,timestamp,detected_activity,confidence\n')
             for user in User.objects.filter(is_superuser=False):
                 response.writelines([
-                    '{0},{1},{2},{3}\n'.format(
+                    '"{0}","{1}","{2}","{3}"\n'.format(
                         activity.user.username,
                         datetime.datetime.fromtimestamp(activity.timestamp).strftime('%d/%m/%y %H:%M:%S'),
                         activity.activity,

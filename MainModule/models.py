@@ -351,7 +351,7 @@ class Survey(models.Model):
 
     @staticmethod
     def survey_str_matches(values):
-        return len(values.split(',')) == len([Survey.QUESTIONS_LIST[key] for key in list(Survey.QUESTIONS_LIST.keys())])
+        return len(values.split(',')) == sum([len(Survey.QUESTIONS_LIST[key]) for key in list(Survey.QUESTIONS_LIST.keys())])
 
     @staticmethod
     def create_survey(user: User, values):
@@ -369,17 +369,34 @@ class AppUsageStats(models.Model):
 
     @staticmethod
     def get_overlapping_elements(user, from_timestamp, till_timestamp):
+        overlapping_elements = []
+
+        # CASE old_start_ts == from_timestamp
+        if AppUsageStats.objects.filter(user=user, start_timestamp=from_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, start_timestamp=from_timestamp):
+                overlapping_elements += [usage]
+
+        # CASE old_end_ts == till_timestamp
+        if AppUsageStats.objects.filter(user=user, end_timestamp=till_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, end_timestamp=till_timestamp):
+                overlapping_elements += [usage]
+
         # CASE: old_start_ts < from_timestamp < old_end_ts
         if AppUsageStats.objects.filter(user=user, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp).exists():
-            return AppUsageStats.objects.filter(user=user, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp)
+            for usage in AppUsageStats.objects.filter(user=user, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp):
+                overlapping_elements += [usage]
 
         # CASE: old_start_ts < till_timestamp < old_end_ts
-        elif AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp).exists():
-            return AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp)
+        if AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp):
+                overlapping_elements += [usage]
 
         # CASE: from_timestamp < old_start_ts & old_end_ts < till_timestamp
-        elif AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp).exists():
-            return AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp)
+        if AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp):
+                overlapping_elements += [usage]
+
+        return None if len(overlapping_elements) == 0 else overlapping_elements
 
     @staticmethod
     def store_usage_changes(user, end_timestamp, total_time_in_foreground):
@@ -433,7 +450,7 @@ class AppUsageStats(models.Model):
                         min_start_timestamp = min(start_timestamp, overlapping_element.start_timestamp)
                         max_end_timestamp = min(end_timestamp, overlapping_element.end_timestamp)
                         max_total_time_in_foreground = min(total_time_in_foreground, overlapping_element.total_time_in_foreground)
-                        overlapping_elements.delete()
+                        overlapping_element.delete()
 
                     return AppUsageStats.objects.create(
                         user=user,
