@@ -401,7 +401,7 @@ class AppUsageStats(models.Model):
     @staticmethod
     def store_usage_changes(user, end_timestamp, total_time_in_foreground):
         # the first element of the table
-        if not AppUsageStats.objects.exists():
+        if not AppUsageStats.objects.filter(user=user).exists():
             return AppUsageStats.objects.create(
                 user=user,
                 start_timestamp=end_timestamp - total_time_in_foreground,
