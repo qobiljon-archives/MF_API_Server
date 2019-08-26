@@ -10,7 +10,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_KEY = '4fyyo2&3%5qn00_0^8!%b)zi*v77-n3rjqlr7kc3bj0fhr0^ps'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = [
     "kwangyoung.pythonanywhere.com",
@@ -74,10 +74,10 @@ DATABASES = {
 } if DEBUG else {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'kwangyoung$default',
-        'HOST': 'kwangyoung.mysql.pythonanywhere-services.com',
-        'USER': 'kwangyoung',
-        'PASSWORD': 'mindforecaster',
+        'NAME': 'mf_db',
+        'HOST': 'localhost',
+        'USER': 'root',
+        'PASSWORD': 'root',
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
         }

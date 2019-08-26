@@ -363,58 +363,61 @@ class AppUsageStats(models.Model):
         unique_together = ['user', 'start_timestamp']
 
     user = models.ForeignKey(to='User', on_delete=models.CASCADE)
+    package_name = models.CharField(max_length=128, default='OLD_MF_ANDROID_CLIENT_APP')
     start_timestamp = models.BigIntegerField()
     end_timestamp = models.BigIntegerField()
     total_time_in_foreground = models.IntegerField()
 
     @staticmethod
-    def get_overlapping_elements(user, from_timestamp, till_timestamp):
+    def get_overlapping_elements(user, package_name, from_timestamp, till_timestamp):
         overlapping_elements = []
 
         # CASE old_start_ts == from_timestamp
-        if AppUsageStats.objects.filter(user=user, start_timestamp=from_timestamp).exists():
-            for usage in AppUsageStats.objects.filter(user=user, start_timestamp=from_timestamp):
+        if AppUsageStats.objects.filter(user=user, package_name=package_name, start_timestamp=from_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, package_name=package_name, start_timestamp=from_timestamp):
                 overlapping_elements += [usage]
 
         # CASE old_end_ts == till_timestamp
-        if AppUsageStats.objects.filter(user=user, end_timestamp=till_timestamp).exists():
-            for usage in AppUsageStats.objects.filter(user=user, end_timestamp=till_timestamp):
+        if AppUsageStats.objects.filter(user=user, package_name=package_name, end_timestamp=till_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, package_name=package_name, end_timestamp=till_timestamp):
                 overlapping_elements += [usage]
 
         # CASE: old_start_ts < from_timestamp < old_end_ts
-        if AppUsageStats.objects.filter(user=user, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp).exists():
-            for usage in AppUsageStats.objects.filter(user=user, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp):
+        if AppUsageStats.objects.filter(user=user, package_name=package_name,start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, package_name=package_name, start_timestamp__lt=from_timestamp, end_timestamp__gt=from_timestamp):
                 overlapping_elements += [usage]
 
         # CASE: old_start_ts < till_timestamp < old_end_ts
-        if AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp).exists():
-            for usage in AppUsageStats.objects.filter(user=user, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp):
+        if AppUsageStats.objects.filter(user=user, package_name=package_name, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, package_name=package_name, start_timestamp__lt=till_timestamp, end_timestamp__gt=till_timestamp):
                 overlapping_elements += [usage]
 
         # CASE: from_timestamp < old_start_ts & old_end_ts < till_timestamp
-        if AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp).exists():
-            for usage in AppUsageStats.objects.filter(user=user, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp):
+        if AppUsageStats.objects.filter(user=user, package_name=package_name, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp).exists():
+            for usage in AppUsageStats.objects.filter(user=user, package_name=package_name, start_timestamp__gt=from_timestamp, end_timestamp__lt=till_timestamp):
                 overlapping_elements += [usage]
 
         return None if len(overlapping_elements) == 0 else overlapping_elements
 
     @staticmethod
-    def store_usage_changes(user, end_timestamp, total_time_in_foreground):
+    def store_usage_changes(user, package_name, end_timestamp, total_time_in_foreground):
         # the first element of the table
-        if not AppUsageStats.objects.filter(user=user).exists():
+        if not AppUsageStats.objects.filter(user=user, package_name=package_name).exists():
             return AppUsageStats.objects.create(
                 user=user,
+                package_name=package_name,
                 start_timestamp=end_timestamp - total_time_in_foreground,
                 end_timestamp=end_timestamp,
                 total_time_in_foreground=total_time_in_foreground
             )
         # next elements of the table
         else:
-            last_usage: AppUsageStats = AppUsageStats.objects.filter(user=user).order_by('-end_timestamp')[0]
+            last_usage: AppUsageStats = AppUsageStats.objects.filter(user=user, package_name=package_name).order_by('-end_timestamp')[0]
             start_timestamp = end_timestamp - (total_time_in_foreground - last_usage.total_time_in_foreground)
             if start_timestamp == end_timestamp:
-                print('Zero length app usage ignored: user={0}, start_timestamp={1}, end_timestamp={2}, total_time_in_foreground={3}'.format(
+                print('Zero length app usage ignored: user={0}, package={1}, start_timestamp={2}, end_timestamp={3}, total_time_in_foreground={4}'.format(
                     user,
+                    package_name,
                     start_timestamp,
                     end_timestamp,
                     total_time_in_foreground
@@ -425,18 +428,20 @@ class AppUsageStats(models.Model):
                 last_usage.end_timestamp = end_timestamp
                 last_usage.save()
             if AppUsageStats.objects.filter(user=user, start_timestamp=start_timestamp).exists():
-                print('Duplicate app usage ignored: user={0}, start_timestamp={1}, end_timestamp={2}, total_time_in_foreground={3}'.format(
+                print('Duplicate app usage ignored: user={0}, package_name={1}, start_timestamp={2}, end_timestamp={3}, total_time_in_foreground={4}'.format(
                     user,
+                    package_name,
                     start_timestamp,
                     end_timestamp,
                     total_time_in_foreground
                 ))
                 return None
             else:
-                overlapping_elements = AppUsageStats.get_overlapping_elements(user, start_timestamp, end_timestamp)
+                overlapping_elements = AppUsageStats.get_overlapping_elements(user, package_name, start_timestamp, end_timestamp)
                 if overlapping_elements is None:
                     return AppUsageStats.objects.create(
                         user=user,
+                        package_name=package_name,
                         start_timestamp=start_timestamp,
                         end_timestamp=end_timestamp,
                         total_time_in_foreground=total_time_in_foreground
@@ -454,6 +459,7 @@ class AppUsageStats(models.Model):
 
                     return AppUsageStats.objects.create(
                         user=user,
+                        package_name=package_name,
                         start_timestamp=min_start_timestamp,
                         end_timestamp=max_end_timestamp,
                         total_time_in_foreground=max_total_time_in_foreground
