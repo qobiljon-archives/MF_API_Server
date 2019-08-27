@@ -113,13 +113,301 @@ def retrieve_file_paths(root_dir):
     # setup file paths variable
     file_paths = []
 
-    for subdir in [elem for elem in os.listdir(root_dir) if '.' not in elem]:
+    for subdir in os.listdir(root_dir):
         file_paths.append(subdir)
-        for file in os.listdir(os.path.join(root_dir, subdir)):
-            file_paths.append(os.path.join(subdir, file))
+        if not os.path.isfile(os.path.join(root_dir, subdir)):
+            for file in os.listdir(os.path.join(root_dir, subdir)):
+                file_paths.append(os.path.join(subdir, file))
 
     # return all paths
     return file_paths
+
+
+def attach_zip_data_extraction(response: HttpResponse):
+    tmp_dir = tempfile.TemporaryDirectory()
+
+    os.mkdir(os.path.join(tmp_dir.name, '1'))  # Users
+    with open(os.path.join(tmp_dir.name, '1', 'Users.csv'), 'w', encoding='UTF8') as w:
+        w.write('name,username\n')
+        w.writelines([
+            '"{0}","{1}"\n'.format(
+                user.first_name,
+                user.username
+            ) for user in User.objects.filter(is_superuser=False)
+        ])
+
+    os.mkdir(os.path.join(tmp_dir.name, '2'))  # Events
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '2', '%s.csv' % _user), 'w', encoding='UTF8') as w:
+            w.write('id,owner,title,start,end,intervention,intervention_selection_method,intervention_reminder,intervention_picked_time,expected_stress_level,expected_stress_type,expected_stress_cause,real_stress_level\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}","{12}"\n'.format(
+                    event.id,
+                    event.owner.username,
+                    event.title,
+                    datetime.datetime.fromtimestamp(event.start_ts).strftime('%d/%m/%y %H:%M:%S'),
+                    datetime.datetime.fromtimestamp(event.end_ts).strftime('%d/%m/%y %H:%M:%S'),
+                    event.intervention.description if event.intervention is not None else 'N/A',
+                    ("system" if event.intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else ("self" if event.intervention.creator == event.owner else "peer")) if event.intervention is not None else 'N/A',
+                    '%d mins %s' % (abs(event.intervention_reminder), "before" if event.intervention_reminder < 0 else "after") if event.intervention is not None else 'N/A',
+                    datetime.datetime.fromtimestamp(event.intervention_last_picked_time).strftime('%d/%m/%y %H:%M:%S'),
+                    event.expected_stress_level,
+                    event.expected_stress_type,
+                    event.expected_stress_cause if event.expected_stress_level != -1 and event.expected_stress_cause != '' else 'N/A',
+                    Evaluation.objects.get(event=event).real_stress_level if Evaluation.objects.filter(event=event).exists() else 'N/A'
+                ) for event in Event.objects.filter(owner=_user)
+            ])
+
+    os.mkdir(os.path.join(tmp_dir.name, '3'))  # Interventions
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '3', '%s.csv' % _user), 'w', encoding='UTF8') as w:
+            w.write('description,creator,number_of_selections,number_of_likes,number_of_dislikes\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}"\n'.format(
+                    intervention.description,
+                    "system" if intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else intervention.creator.username,
+                    intervention.number_of_selections,
+                    intervention.number_of_likes,
+                    intervention.number_of_dislikes
+                ) for intervention in Intervention.objects.filter(creator=_user).order_by('creation_method').exclude(number_of_selections=0)
+            ])
+    with open(os.path.join(tmp_dir.name, '3', 'system.csv'), 'w', encoding='UTF8') as w:
+        w.write('description,creator,number_of_selections,number_of_likes,number_of_dislikes\n')
+        w.writelines([
+            '"{0}","{1}","{2}","{3}","{4}"\n'.format(
+                intervention.description,
+                "system" if intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else intervention.creator.username,
+                intervention.number_of_selections,
+                intervention.number_of_likes,
+                intervention.number_of_dislikes
+            ) for intervention in Intervention.objects.filter(creator=None).order_by('creation_method').exclude(number_of_selections=0)
+        ])
+
+    os.mkdir(os.path.join(tmp_dir.name, '4'))  # Event Evaluations
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '4', '%s.csv' % _user), 'w', encoding='UTF8') as w:
+            w.write('submitted_by,event_id,event_title,event_was_done,selected_intervention,intervention_effectiveness,intervention_was_done,expected_stress_level,real_stress_level,expected_stress_cause,real_stress_cause,journal\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}"\n'.format(
+                    evaluation.event.owner.username,
+                    evaluation.event.id,
+                    evaluation.event.title,
+                    evaluation.event_done,
+                    evaluation.event.intervention.description if evaluation.event.intervention is not None else 'N/A',
+                    evaluation.intervention_effectiveness if evaluation.event.intervention is not None else 'N/A',
+                    evaluation.intervention_done,
+                    evaluation.event.expected_stress_level,
+                    evaluation.real_stress_level,
+                    evaluation.event.expected_stress_cause,
+                    evaluation.real_stress_cause,
+                    evaluation.journal
+                ) for evaluation in Evaluation.objects.filter(event__owner=_user)
+            ])
+
+    os.mkdir(os.path.join(tmp_dir.name, '5'))  # Surveys
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '5', '%s.csv' % _user), 'w', encoding='UTF8') as w:
+            if Survey.objects.filter(user=_user).count() == 0:
+                w.write('!!! EMPTY !!!\n')
+            else:
+                parts = list(Survey.QUESTIONS_LIST.keys())
+                w.write('user,submission_time,%s\n' % ','.join([parts[0]] + (len(Survey.QUESTIONS_LIST[parts[0]]) - 1) * [''] + [parts[1]] + (len(Survey.QUESTIONS_LIST[parts[1]]) - 1) * [''] + [parts[2]] + (len(Survey.QUESTIONS_LIST[parts[2]]) - 1) * ['']))
+                questions = ''
+                for part in parts:
+                    questions += '%s,' % ','.join(['"%s"' % question for question in Survey.QUESTIONS_LIST[part]])
+                if questions.endswith(','):
+                    questions = questions[:-1]
+                w.write('"","",%s\n' % questions)
+                w.writelines([
+                    '"{0}","{1}",{2}\n'.format(
+                        survey.user.username,
+                        datetime.datetime.fromtimestamp(survey.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        ','.join('"%s"' % value for value in survey.values.split(','))
+                    ) for survey in Survey.objects.filter(user=_user)
+                ])
+
+    os.mkdir(os.path.join(tmp_dir.name, '6'))  # App-Usages
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '6', '%s.csv' % _user), 'w', encoding='UTF8') as w:
+            w.write('user,usage_start_time,usage_end_time,total_usage_by_far\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}"\n'.format(
+                    usage.user.username,
+                    datetime.datetime.fromtimestamp(usage.start_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    datetime.datetime.fromtimestamp(usage.end_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    seconds_to_readable_str(usage.total_time_in_foreground)
+                ) for usage in AppUsageStats.objects.filter(user=_user).exclude(total_time_in_foreground=0).order_by('total_time_in_foreground')
+            ])
+
+    os.mkdir(os.path.join(tmp_dir.name, '7'))  # GPS Locations
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '7', '%s.csv' % _user), 'w', encoding='UTF8') as w:
+            w.write('user,timestamp,latitude,longitude,altitude\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}"\n'.format(
+                    location.user.username,
+                    datetime.datetime.fromtimestamp(location.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    location.latitude,
+                    location.longitude,
+                    location.altitude
+                ) for location in LocationData.objects.filter(user=_user).order_by('timestamp')
+            ])
+
+    os.mkdir(os.path.join(tmp_dir.name, '8'))  # Activity Recognitions
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '8', '%s.csv' % _user), 'w', encoding='UTF8') as w:
+            w.write('8. Activity Recognitions\n')
+            w.write('user,timestamp,detected_activity,confidence\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}"\n'.format(
+                    activity.user.username,
+                    datetime.datetime.fromtimestamp(activity.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    activity.activity,
+                    activity.confidence
+                ) for activity in ActivityRecognitionData.objects.filter(user=_user).order_by('timestamp')
+            ])
+
+    file_paths = retrieve_file_paths(tmp_dir.name)
+    with zipfile.ZipFile(os.path.join(tmp_dir.name, 'result.zip'), 'w') as zip_file:
+        for path in file_paths:
+            os.chdir(tmp_dir.name)
+            zip_file.write(path)
+        with open(os.path.join(tmp_dir.name, 'result.zip'), 'rb') as r:
+            response.write(r.read())
+
+
+def attach_csv_data_extraction(response: HttpResponse):
+    tmp_dir = tempfile.TemporaryDirectory()
+
+    with open(os.path.join(tmp_dir.name, 'users.csv'), 'w', encoding='UTF8') as w:
+        w.write('name,username\n')
+        w.writelines([
+            '"{0}","{1}"\n'.format(
+                user.first_name,
+                user.username
+            ) for user in User.objects.filter(is_superuser=False)
+        ])
+
+    for _user in User.objects.filter(is_superuser=False):
+        with open(os.path.join(tmp_dir.name, '%s.csv' % _user.username), 'w', encoding='UTF8') as w:
+            w.write('1. EVENTS\n')
+            w.write('id,owner,title,start,end,intervention,intervention_selection_method,intervention_reminder,intervention_picked_time,expected_stress_level,expected_stress_type,expected_stress_cause,real_stress_level\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}","{12}"\n'.format(
+                    event.id,
+                    event.owner.username,
+                    event.title,
+                    datetime.datetime.fromtimestamp(event.start_ts).strftime('%d/%m/%y %H:%M:%S'),
+                    datetime.datetime.fromtimestamp(event.end_ts).strftime('%d/%m/%y %H:%M:%S'),
+                    event.intervention.description if event.intervention is not None else 'N/A',
+                    ("system" if event.intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else ("self" if event.intervention.creator == event.owner else "peer")) if event.intervention is not None else 'N/A',
+                    '%d mins %s' % (abs(event.intervention_reminder), "before" if event.intervention_reminder < 0 else "after") if event.intervention is not None else 'N/A',
+                    datetime.datetime.fromtimestamp(event.intervention_last_picked_time).strftime('%d/%m/%y %H:%M:%S'),
+                    event.expected_stress_level,
+                    event.expected_stress_type,
+                    event.expected_stress_cause if event.expected_stress_level != -1 and event.expected_stress_cause != '' else 'N/A',
+                    Evaluation.objects.get(event=event).real_stress_level if Evaluation.objects.filter(event=event).exists() else 'N/A'
+                ) for event in Event.objects.filter(owner=_user)
+            ])
+            w.write('\n')
+
+            w.write('2. INTERVENTIONS\n')
+            w.write('description,creator,number_of_selections,number_of_likes,number_of_dislikes\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}"\n'.format(
+                    intervention.description,
+                    intervention.creator.username,
+                    intervention.number_of_selections,
+                    intervention.number_of_likes,
+                    intervention.number_of_dislikes
+                ) for intervention in Intervention.objects.filter(creator=_user).order_by('creation_method').exclude(number_of_selections=0)
+            ])
+            w.write('\n')
+
+            w.write('3. EVENT EVALUATIONS\n')
+            w.write('submitted_by,event_id,event_title,event_was_done,selected_intervention,intervention_effectiveness,intervention_was_done,expected_stress_level,real_stress_level,expected_stress_cause,real_stress_cause,journal\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}"\n'.format(
+                    evaluation.event.owner.username,
+                    evaluation.event.id,
+                    evaluation.event.title,
+                    evaluation.event_done,
+                    evaluation.event.intervention.description if evaluation.event.intervention is not None else 'N/A',
+                    evaluation.intervention_effectiveness if evaluation.event.intervention is not None else 'N/A',
+                    evaluation.intervention_done,
+                    evaluation.event.expected_stress_level,
+                    evaluation.real_stress_level,
+                    evaluation.event.expected_stress_cause,
+                    evaluation.real_stress_cause,
+                    evaluation.journal
+                ) for evaluation in Evaluation.objects.filter(event__owner=_user)
+            ])
+            w.write('\n')
+
+            w.write('4. SURVEYS\n')
+            if Survey.objects.all().count() == 0:
+                w.write('!!! EMPTY !!!\n')
+            else:
+                parts = list(Survey.QUESTIONS_LIST.keys())
+                w.write('user,submission_time,%s\n' % ','.join([parts[0]] + (len(Survey.QUESTIONS_LIST[parts[0]]) - 1) * [''] + [parts[1]] + (len(Survey.QUESTIONS_LIST[parts[1]]) - 1) * [''] + [parts[2]] + (len(Survey.QUESTIONS_LIST[parts[2]]) - 1) * ['']))
+                questions = ''
+                for part in parts:
+                    questions += '%s,' % ','.join(['"%s"' % question for question in Survey.QUESTIONS_LIST[part]])
+                if questions.endswith(','):
+                    questions = questions[:-1]
+                w.write('"","",%s\n' % questions)
+                w.writelines([
+                    '"{0}","{1}",{2}\n'.format(
+                        survey.user.username,
+                        datetime.datetime.fromtimestamp(survey.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                        ','.join('"%s"' % value for value in survey.values.split(','))
+                    ) for survey in Survey.objects.filter(user=_user)
+                ])
+            w.write('\n')
+
+            w.write('5. APP USAGE\n')
+            w.write('user,usage_start_time,usage_end_time,total_usage_by_far\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}"\n'.format(
+                    usage.user.username,
+                    datetime.datetime.fromtimestamp(usage.start_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    datetime.datetime.fromtimestamp(usage.end_timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    seconds_to_readable_str(usage.total_time_in_foreground)
+                ) for usage in AppUsageStats.objects.filter(user=_user).exclude(total_time_in_foreground=0).order_by('total_time_in_foreground')
+            ])
+            w.write('\n')
+
+            w.write('6. GPS Locations\n')
+            w.write('user,timestamp,latitude,longitude,altitude\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}","{4}"\n'.format(
+                    location.user.username,
+                    datetime.datetime.fromtimestamp(location.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    location.latitude,
+                    location.longitude,
+                    location.altitude
+                ) for location in LocationData.objects.filter(user=_user).order_by('timestamp')
+            ])
+            w.write('\n')
+
+            w.write('7. Activity Recognitions\n')
+            w.write('user,timestamp,detected_activity,confidence\n')
+            w.writelines([
+                '"{0}","{1}","{2}","{3}"\n'.format(
+                    activity.user.username,
+                    datetime.datetime.fromtimestamp(activity.timestamp).strftime('%d/%m/%y %H:%M:%S'),
+                    activity.activity,
+                    activity.confidence
+                ) for activity in ActivityRecognitionData.objects.filter(user=_user).order_by('timestamp')
+            ])
+
+    file_paths = retrieve_file_paths(tmp_dir.name)
+    with zipfile.ZipFile(os.path.join(tmp_dir.name, 'result.zip'), 'w') as zip_file:
+        for path in file_paths:
+            os.chdir(tmp_dir.name)
+            zip_file.write(path)
+        with open(os.path.join(tmp_dir.name, 'result.zip'), 'rb') as r:
+            response.write(r.read())
 
 
 @csrf_exempt
@@ -492,156 +780,34 @@ def handle_survey_questions_fetch(request):
 
 @csrf_exempt
 @require_http_methods(['POST', 'GET'])
-def handle_extract_data_to_csv(request):
+def handle_extract_data_by_users(request):
     params = extract_post_params(request)
     if are_params_filled(params, ['username', 'password']):
         user = authenticate(username=params['username'], password=params['password'])
         if user is not None and user.is_superuser:
             response = HttpResponse(content_type='text/html')
             response['Content-Disposition'] = 'attachment; filename="MF_Data_%s.zip"' % datetime.datetime.now().strftime("%d-%m-%y %H-%M-%S")
-            tmp_dir = tempfile.TemporaryDirectory()
-            os.mkdir(os.path.join(tmp_dir.name, '1'))  # Users
-            with open(os.path.join(tmp_dir.name, '1', 'Users.csv'), 'w', encoding='UTF8') as w:
-                w.write('name,username\n')
-                w.writelines([
-                    '"{0}","{1}"\n'.format(
-                        user.first_name,
-                        user.username
-                    ) for user in User.objects.filter(is_superuser=False)
-                ])
-            os.mkdir(os.path.join(tmp_dir.name, '2'))  # Events
-            for _user in User.objects.filter(is_superuser=False):
-                with open(os.path.join(tmp_dir.name, '2', '%s.csv' % _user), 'w', encoding='UTF8') as w:
-                    w.write('id,owner,title,start,end,intervention,intervention_selection_method,intervention_reminder,intervention_picked_time,expected_stress_level,expected_stress_type,expected_stress_cause,real_stress_level\n')
-                    w.writelines([
-                        '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}","{12}"\n'.format(
-                            event.id,
-                            event.owner.username,
-                            event.title,
-                            datetime.datetime.fromtimestamp(event.start_ts).strftime('%d/%m/%y %H:%M:%S'),
-                            datetime.datetime.fromtimestamp(event.end_ts).strftime('%d/%m/%y %H:%M:%S'),
-                            event.intervention.description if event.intervention is not None else 'N/A',
-                            ("system" if event.intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else ("self" if event.intervention.creator == event.owner else "peer")) if event.intervention is not None else 'N/A',
-                            '%d mins %s' % (abs(event.intervention_reminder), "before" if event.intervention_reminder < 0 else "after") if event.intervention is not None else 'N/A',
-                            datetime.datetime.fromtimestamp(event.intervention_last_picked_time).strftime('%d/%m/%y %H:%M:%S'),
-                            event.expected_stress_level,
-                            event.expected_stress_type,
-                            event.expected_stress_cause if event.expected_stress_level != -1 and event.expected_stress_cause != '' else 'N/A',
-                            Evaluation.objects.get(event=event).real_stress_level if Evaluation.objects.filter(event=event).exists() else 'N/A'
-                        ) for event in Event.objects.filter(owner=_user)
-                    ])
-            os.mkdir(os.path.join(tmp_dir.name, '3'))  # Interventions
-            for _user in User.objects.filter(is_superuser=False):
-                with open(os.path.join(tmp_dir.name, '3', '%s.csv' % _user), 'w', encoding='UTF8') as w:
-                    w.write('description,creator,number_of_selections,number_of_likes,number_of_dislikes\n')
-                    w.writelines([
-                        '"{0}","{1}","{2}","{3}","{4}"\n'.format(
-                            intervention.description,
-                            "system" if intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else intervention.creator.username,
-                            intervention.number_of_selections,
-                            intervention.number_of_likes,
-                            intervention.number_of_dislikes
-                        ) for intervention in Intervention.objects.filter(creator=_user).order_by('creation_method').exclude(number_of_selections=0)
-                    ])
-            with open(os.path.join(tmp_dir.name, '3', 'system.csv'), 'w', encoding='UTF8') as w:
-                w.write('description,creator,number_of_selections,number_of_likes,number_of_dislikes\n')
-                w.writelines([
-                    '"{0}","{1}","{2}","{3}","{4}"\n'.format(
-                        intervention.description,
-                        "system" if intervention.creation_method == Intervention.CREATION_METHOD_SYSTEM else intervention.creator.username,
-                        intervention.number_of_selections,
-                        intervention.number_of_likes,
-                        intervention.number_of_dislikes
-                    ) for intervention in Intervention.objects.filter(creator=None).order_by('creation_method').exclude(number_of_selections=0)
-                ])
-            os.mkdir(os.path.join(tmp_dir.name, '4'))  # Event Evaluations
-            for _user in User.objects.filter(is_superuser=False):
-                with open(os.path.join(tmp_dir.name, '4', '%s.csv' % _user), 'w', encoding='UTF8') as w:
-                    w.write('submitted_by,event_id,event_title,event_was_done,selected_intervention,intervention_effectiveness,intervention_was_done,expected_stress_level,real_stress_level,expected_stress_cause,real_stress_cause,journal\n')
-                    w.writelines([
-                        '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}"\n'.format(
-                            evaluation.event.owner.username,
-                            evaluation.event.id,
-                            evaluation.event.title,
-                            evaluation.event_done,
-                            evaluation.event.intervention.description if evaluation.event.intervention is not None else 'N/A',
-                            evaluation.intervention_effectiveness if evaluation.event.intervention is not None else 'N/A',
-                            evaluation.intervention_done,
-                            evaluation.event.expected_stress_level,
-                            evaluation.real_stress_level,
-                            evaluation.event.expected_stress_cause,
-                            evaluation.real_stress_cause,
-                            evaluation.journal
-                        ) for evaluation in Evaluation.objects.filter(event__owner=_user)
-                    ])
-            os.mkdir(os.path.join(tmp_dir.name, '5'))  # Surveys
-            for _user in User.objects.filter(is_superuser=False):
-                with open(os.path.join(tmp_dir.name, '5', '%s.csv' % _user), 'w', encoding='UTF8') as w:
-                    if Survey.objects.filter(user=_user).count() == 0:
-                        w.write('!!! EMPTY !!!\n')
-                    else:
-                        parts = list(Survey.QUESTIONS_LIST.keys())
-                        w.write('user,submission_time,%s\n' % ','.join([parts[0]] + (len(Survey.QUESTIONS_LIST[parts[0]]) - 1) * [''] + [parts[1]] + (len(Survey.QUESTIONS_LIST[parts[1]]) - 1) * [''] + [parts[2]] + (len(Survey.QUESTIONS_LIST[parts[2]]) - 1) * ['']))
-                        questions = ''
-                        for part in parts:
-                            questions += '%s,' % ','.join(['"%s"' % question for question in Survey.QUESTIONS_LIST[part]])
-                        if questions.endswith(','):
-                            questions = questions[:-1]
-                        w.write('"","",%s\n' % questions)
-                        w.writelines([
-                            '"{0}","{1}",{2}\n'.format(
-                                survey.user.username,
-                                datetime.datetime.fromtimestamp(survey.timestamp).strftime('%d/%m/%y %H:%M:%S'),
-                                ','.join('"%s"' % value for value in survey.values.split(','))
-                            ) for survey in Survey.objects.filter(user=_user)
-                        ])
-            os.mkdir(os.path.join(tmp_dir.name, '6'))  # App-Usages
-            for _user in User.objects.filter(is_superuser=False):
-                with open(os.path.join(tmp_dir.name, '6', '%s.csv' % _user), 'w', encoding='UTF8') as w:
-                    w.write('user,usage_start_time,usage_end_time,total_usage_by_far\n')
-                    w.writelines([
-                        '"{0}","{1}","{2}","{3}"\n'.format(
-                            usage.user.username,
-                            datetime.datetime.fromtimestamp(usage.start_timestamp).strftime('%d/%m/%y %H:%M:%S'),
-                            datetime.datetime.fromtimestamp(usage.end_timestamp).strftime('%d/%m/%y %H:%M:%S'),
-                            seconds_to_readable_str(usage.total_time_in_foreground)
-                        ) for usage in AppUsageStats.objects.filter(user=_user).exclude(total_time_in_foreground=0).order_by('total_time_in_foreground')
-                    ])
-            os.mkdir(os.path.join(tmp_dir.name, '7'))  # GPS Locations
-            for _user in User.objects.filter(is_superuser=False):
-                with open(os.path.join(tmp_dir.name, '7', '%s.csv' % _user), 'w', encoding='UTF8') as w:
-                    w.write('user,timestamp,latitude,longitude,altitude\n')
-                    w.writelines([
-                        '"{0}","{1}","{2}","{3}","{4}"\n'.format(
-                            location.user.username,
-                            datetime.datetime.fromtimestamp(location.timestamp).strftime('%d/%m/%y %H:%M:%S'),
-                            location.latitude,
-                            location.longitude,
-                            location.altitude
-                        ) for location in LocationData.objects.filter(user=_user).order_by('timestamp')
-                    ])
-            os.mkdir(os.path.join(tmp_dir.name, '8'))  # Activity Recognitions
-            for _user in User.objects.filter(is_superuser=False):
-                with open(os.path.join(tmp_dir.name, '8', '%s.csv' % _user), 'w', encoding='UTF8') as w:
-                    w.write('8. Activity Recognitions\n')
-                    w.write('user,timestamp,detected_activity,confidence\n')
-                    w.writelines([
-                        '"{0}","{1}","{2}","{3}"\n'.format(
-                            activity.user.username,
-                            datetime.datetime.fromtimestamp(activity.timestamp).strftime('%d/%m/%y %H:%M:%S'),
-                            activity.activity,
-                            activity.confidence
-                        ) for activity in ActivityRecognitionData.objects.filter(user=_user).order_by('timestamp')
-                    ])
+            attach_zip_data_extraction(response)
+            return response
+        else:
+            return JsonResponse(data={'result': Result.FAIL})
+    elif request.method == 'GET':
+        return render(request, template_name='data_extraction_page.html')
+    else:
+        return JsonResponse(data={'result': Result.BAD_REQUEST})
 
-            with zipfile.ZipFile(os.path.join(tmp_dir.name, 'result.zip'), 'w') as zip_file:
-                file_paths = retrieve_file_paths(tmp_dir.name)
-                for path in file_paths:
-                    os.chdir(tmp_dir.name)
-                    zip_file.write(path)
-                with open(os.path.join(tmp_dir.name, 'result.zip'), 'rb') as r:
-                    response.write(r.read())
-                    return response
+
+@csrf_exempt
+@require_http_methods(['POST', 'GET'])
+def handle_extract_data_by_data_sources(request):
+    params = extract_post_params(request)
+    if are_params_filled(params, ['username', 'password']):
+        user = authenticate(username=params['username'], password=params['password'])
+        if user is not None and user.is_superuser:
+            response = HttpResponse(content_type='text/html')
+            response['Content-Disposition'] = 'attachment; filename="MF_Data_%s.zip"' % datetime.datetime.now().strftime("%d-%m-%y %H-%M-%S")
+            attach_csv_data_extraction(response)
+            return response
         else:
             return JsonResponse(data={'result': Result.FAIL})
     elif request.method == 'GET':
@@ -719,3 +885,8 @@ def handle_activity_recognition_submit(request):
             return JsonResponse(data={'result': Result.FAIL})
     else:
         return JsonResponse(data={'result': Result.BAD_REQUEST})
+
+
+@csrf_exempt
+def page_index(request):
+    return render(request, 'index.html')

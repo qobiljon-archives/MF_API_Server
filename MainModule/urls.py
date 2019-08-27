@@ -11,6 +11,8 @@ Intervention.create_system_interventions()
 urlpatterns = [
     url('admin/', admin.site.urls),
 
+    re_path(r'^$', views.page_index),
+
     re_path(r'^register/?$', views.handle_register),
     re_path(r'^login/?$', views.handle_login),
 
@@ -29,7 +31,8 @@ urlpatterns = [
     re_path(r'^survey_submit/?$', views.handle_survey_submit),
     re_path(r'^survey_questions_fetch/?$', views.handle_survey_questions_fetch),
 
-    re_path(r'^extract_data/?$', views.handle_extract_data_to_csv),
+    re_path(r'^extract_data/separate_users?$', views.handle_extract_data_by_users),
+    re_path(r'^extract_data/separate_data_sources?$', views.handle_extract_data_by_data_sources),
 
     re_path(r'^usage_stats_submit/?$', views.handle_usage_stats_submit),
     re_path(r'^location_data_submit/?$', views.handle_location_data_submit),
